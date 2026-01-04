@@ -1,2 +1,5 @@
 - Use clippy for linting, write tests
-- Mirror overview specs into README to keep goals/non-goals/deliverables visible at repo root
+- use latest package versions in cargo
+- Add per-crate `[lints] workspace = true` sections to inherit workspace lint settings.
+- Parse raw CLI ids into typed IDs in `canvas-models`, then surface errors via `canvas-core` helpers.
+- There's a token in .env file that you can use to test things, it's a free account
