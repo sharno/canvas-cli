@@ -7,7 +7,10 @@ license.workspace = true
 
 [dependencies]
 canvas-core.workspace = true
+canvas-models.workspace = true
 clap.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 

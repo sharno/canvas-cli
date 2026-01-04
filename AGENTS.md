@@ -4,3 +4,4 @@
 - Add per-crate `[lints] workspace = true` sections to inherit workspace lint settings.
 - Parse raw CLI ids into typed IDs in `canvas-models`, then surface errors via `canvas-core` helpers.
 - On Windows, prefer `reqwest` with `default-features = false` and `native-tls` to avoid aws-lc build dependencies (cmake/nasm).
+- CLI output should always include stable JSON keys with an explicit schema version.
