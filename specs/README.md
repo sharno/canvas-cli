@@ -2,32 +2,32 @@
 
 This folder splits the plan into small, actionable work items.
 
-- 00-overview.md
-- 01-workspace-foundation.md
-- 02-auth-config.md
-- 03-cli-ux.md
-- 04-models-validation.md
-- 05-api-client.md
-- 06-course-management.md
-- 07-assignments-grading.md
-- 08-content-management.md
-- 09-people-communication.md
-- 10-analytics-reports.md
-- 11-llm-output-schemas.md
-- 12-testing-strategy.md
-- 13-quizzes.md
-- 14-calendar-events.md
-- 15-outcomes-rubrics.md
-- 16-external-tools.md
-- 17-question-banks.md
-- 18-assignment-advanced.md
-- 19-gradebook-policies.md
-- 20-conferences.md
-- 21-collaborations.md
-- 22-module-requirements.md
-- 23-content-migrations.md
-- 24-sections-enrollments.md
-- 25-notification-preferences.md
-- 26-canvas-ask.md
+- 0000-overview.md
+- 0001-workspace-foundation.md
+- 0002-auth-config.md
+- 0003-cli-ux.md
+- 0004-models-validation.md
+- 0005-api-client.md
+- 0006-course-management.md
+- 0007-assignments-grading.md
+- 0008-content-management.md
+- 0009-people-communication.md
+- 0010-analytics-reports.md
+- 0011-llm-output-schemas.md
+- 0012-testing-strategy.md
+- 0013-quizzes.md
+- 0014-calendar-events.md
+- 0015-outcomes-rubrics.md
+- 0016-external-tools.md
+- 0017-question-banks.md
+- 0018-assignment-advanced.md
+- 0019-gradebook-policies.md
+- 0020-conferences.md
+- 0021-collaborations.md
+- 0022-module-requirements.md
+- 0023-content-migrations.md
+- 0024-sections-enrollments.md
+- 0025-notification-preferences.md
+- 0026-canvas-ask.md
 
 Shared API references live in `references.md`.
