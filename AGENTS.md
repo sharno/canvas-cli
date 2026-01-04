@@ -1,1 +1,2 @@
 - Use clippy for linting, write tests
+- Mirror overview specs into README to keep goals/non-goals/deliverables visible at repo root
