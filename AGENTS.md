@@ -5,3 +5,5 @@
 - Parse raw CLI ids into typed IDs in `canvas-models`, then surface errors via `canvas-core` helpers.
 - On Windows, prefer `reqwest` with `default-features = false` and `native-tls` to avoid aws-lc build dependencies (cmake/nasm).
 - CLI output should always include stable JSON keys with an explicit schema version.
+- DueDate parsing uses RFC3339 via `time`; prefer `Score::new(value, max)` when assignment points are known.
+- API client lives in `canvas-core/src/api.rs`; prefer `CanvasClient::get_json`/`get_paginated` and surface `ApiError` details via CLI error JSON.

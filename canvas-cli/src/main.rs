@@ -1,5 +1,4 @@
 use std::io::{self, Write};
-use std::path::PathBuf;
 
 use canvas_models::CourseId;
 use clap::{Args, Parser, Subcommand};
@@ -98,6 +97,20 @@ enum CourseCommand {
 }
 
 #[derive(Debug)]
+struct CourseListRequest;
+
+#[derive(Debug)]
+struct CourseShowRequest {
+    course_id: Option<CourseId>,
+}
+
+#[derive(Debug)]
+enum CourseRequest {
+    List(CourseListRequest),
+    Show(CourseShowRequest),
+}
+
+#[derive(Debug)]
 struct GlobalOptions {
     course: Option<CourseId>,
     json: bool,
@@ -165,7 +178,10 @@ fn run(cli: Cli) -> Result<(), CliError> {
     match command {
         Command::Auth { command } => handle_auth(command, &global),
         Command::Config { command } => handle_config(command, &global),
-        Command::Course { command } => handle_course(command, &global),
+        Command::Course { command } => {
+            let request = CourseRequest::try_from((command, &global))?;
+            handle_course(request, &global)
+        }
         Command::Ask { prompt } => handle_ask(&prompt, &global),
     }
 }
@@ -221,9 +237,9 @@ fn handle_config(command: ConfigCommand, global: &GlobalOptions) -> Result<(), C
     Ok(())
 }
 
-fn handle_course(command: CourseCommand, global: &GlobalOptions) -> Result<(), CliError> {
-    match command {
-        CourseCommand::List => {
+fn handle_course(request: CourseRequest, global: &GlobalOptions) -> Result<(), CliError> {
+    match request {
+        CourseRequest::List(_) => {
             let planned = vec![PlannedAction {
                 action: "list courses",
                 risk: "none",
@@ -242,11 +258,8 @@ fn handle_course(command: CourseCommand, global: &GlobalOptions) -> Result<(), C
                 println!("Course listing not implemented yet.");
             }
         }
-        CourseCommand::Show { course } => {
-            let course_id = match course {
-                Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
-                None => global.course,
-            };
+        CourseRequest::Show(request) => {
+            let course_id = request.course_id;
             let planned = vec![PlannedAction {
                 action: "show course summary",
                 risk: "none",
@@ -299,7 +312,7 @@ fn execute_ask_plan(plan: &AskPlan, global: &GlobalOptions) -> Result<(), CliErr
                 handle_auth(AuthCommand::Check, global)?;
             }
             "course list" => {
-                handle_course(CourseCommand::List, global)?;
+                handle_course(CourseRequest::List(CourseListRequest), global)?;
             }
             _ => return Err(CliError::AskExecutionUnsupported),
         }
@@ -526,17 +539,25 @@ fn error_code(error: &CliError) -> &'static str {
     match error {
         CliError::MissingCommand => "missing_command",
         CliError::ConfirmationRequired(_) => "confirmation_required",
-        CliError::AskExecutionUnsupported => "ask_execution_unsupported",
+        CliError::AskExecutionUnsupported => "ask_execution_unsupported",       
         CliError::Canvas(canvas_error) => match canvas_error {
             canvas_core::CanvasError::InvalidCourseId(_) => "invalid_course_id",
+            canvas_core::CanvasError::InvalidAssignmentId(_) => "invalid_assignment_id",
+            canvas_core::CanvasError::InvalidUserId(_) => "invalid_user_id",
+            canvas_core::CanvasError::InvalidSubmissionId(_) => "invalid_submission_id",
+            canvas_core::CanvasError::InvalidScore(_) => "invalid_score",
+            canvas_core::CanvasError::InvalidDueDate(_) => "invalid_due_date",
+            canvas_core::CanvasError::InvalidPublishState(_) => "invalid_publish_state",
+            canvas_core::CanvasError::InvalidRubricSelection(_) => "invalid_rubric_selection",
             canvas_core::CanvasError::InvalidHost(_) => "invalid_host",
             canvas_core::CanvasError::InvalidToken => "invalid_token",
-            canvas_core::CanvasError::MissingConfig(_) => "missing_config",
-            canvas_core::CanvasError::ConfigRead(_, _) => "config_read",
+            canvas_core::CanvasError::MissingConfig(_) => "missing_config",     
+            canvas_core::CanvasError::ConfigRead(_, _) => "config_read",        
             canvas_core::CanvasError::ConfigParse(_, _) => "config_parse",
             canvas_core::CanvasError::ConfigWrite(_, _) => "config_write",
             canvas_core::CanvasError::AuthCheckFailed(_) => "auth_check_failed",
             canvas_core::CanvasError::Http(_) => "http_error",
+            canvas_core::CanvasError::Api(api_error) => api_error.code().as_str(),
         },
     }
 }
@@ -548,6 +569,13 @@ fn error_details(error: &CliError) -> Value {
         }
         CliError::Canvas(canvas_error) => match canvas_error {
             canvas_core::CanvasError::InvalidCourseId(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidAssignmentId(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidUserId(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidSubmissionId(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidScore(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidDueDate(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidPublishState(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidRubricSelection(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidHost(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::MissingConfig(path) => json!({ "path": path }),
             canvas_core::CanvasError::ConfigRead(path, detail) => {
@@ -561,6 +589,11 @@ fn error_details(error: &CliError) -> Value {
             }
             canvas_core::CanvasError::AuthCheckFailed(detail) => json!({ "detail": detail }),
             canvas_core::CanvasError::Http(detail) => json!({ "detail": detail }),
+            canvas_core::CanvasError::Api(api_error) => json!({
+                "status": api_error.status(),
+                "request_id": api_error.request_id(),
+                "body": api_error.body(),
+            }),
             canvas_core::CanvasError::InvalidToken => json!({}),
         },
         _ => json!({}),
@@ -585,7 +618,25 @@ impl TryFrom<&GlobalArgs> for GlobalOptions {
     }
 }
 
-fn run_init(config_path: &PathBuf) -> Result<(), canvas_core::CanvasError> {
+impl TryFrom<(CourseCommand, &GlobalOptions)> for CourseRequest {
+    type Error = CliError;
+
+    fn try_from(input: (CourseCommand, &GlobalOptions)) -> Result<Self, Self::Error> {
+        let (command, global) = input;
+        match command {
+            CourseCommand::List => Ok(CourseRequest::List(CourseListRequest)),
+            CourseCommand::Show { course } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                };
+                Ok(CourseRequest::Show(CourseShowRequest { course_id }))
+            }
+        }
+    }
+}
+
+fn run_init(config_path: &std::path::Path) -> Result<(), canvas_core::CanvasError> {
     let host_input = prompt("Canvas host (e.g., https://school.instructure.com): ")?;
     let host = canvas_core::parse_host(&host_input)?;
     let token_input = prompt("Canvas token: ")?;
@@ -621,7 +672,7 @@ fn prompt(message: &str) -> Result<String, canvas_core::CanvasError> {
     Ok(input.trim().to_string())
 }
 
-fn create_config_dir(path: &PathBuf) -> Result<(), canvas_core::CanvasError> {
+fn create_config_dir(path: &std::path::Path) -> Result<(), canvas_core::CanvasError> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|err| {
             canvas_core::CanvasError::ConfigWrite(parent.display().to_string(), err.to_string())
