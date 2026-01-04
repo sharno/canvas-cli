@@ -1,0 +1,3 @@
+- C:/Users/sharno/projects/canvas-cli/specs/0000-overview.md
+- C:/Users/sharno/projects/canvas-cli/specs/0001-workspace-foundation.md
+- C:/Users/sharno/projects/canvas-cli/specs/0002-auth-config.md

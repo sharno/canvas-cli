@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import subprocess
@@ -76,6 +77,32 @@ def run_codex(codex_exe: str, codex_args: list[str], prompt: str) -> tuple[int, 
     )
     output = (process.stdout or "") + (process.stderr or "")
     return process.returncode, output
+
+
+def parse_reset_seconds(text: str) -> int | None:
+    match = re.search(r'resets_in_seconds"\s*:\s*(\d+)', text)
+    if match:
+        return int(match.group(1))
+    match = re.search(r'resets_at"\s*:\s*(\d+)', text)
+    if match:
+        reset_epoch = int(match.group(1))
+        return max(0, reset_epoch - int(time.time()))
+    for line in text.splitlines():
+        line = line.strip()
+        if not (line.startswith("{") and line.endswith("}")):
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            reset_seconds = payload.get("resets_in_seconds")
+            if isinstance(reset_seconds, int):
+                return reset_seconds
+            reset_epoch = payload.get("resets_at")
+            if isinstance(reset_epoch, int):
+                return max(0, reset_epoch - int(time.time()))
+    return None
 
 
 def main() -> int:
@@ -156,15 +183,18 @@ def main() -> int:
             )
 
             if usage_limit:
-                match = re.search(r'resets_in_seconds"\s*:\s*(\d+)', output_text)
-                if match:
-                    reset_seconds = int(match.group(1))
-                    wait_seconds = reset_seconds + 30
+                reset_seconds = parse_reset_seconds(output_text)
+                if reset_seconds is None:
+                    wait_seconds = 60 * 60
                     print(f"[wait] usage limit reached; sleeping {wait_seconds} seconds before retry")
                     time.sleep(wait_seconds)
                     attempt += 1
                     continue
-                raise RuntimeError("Codex usage limit reached. Stop and resume after limits reset.")
+                wait_seconds = reset_seconds + 30
+                print(f"[wait] usage limit reached; sleeping {wait_seconds} seconds before retry")
+                time.sleep(wait_seconds)
+                attempt += 1
+                continue
 
             if exit_code != 0:
                 print(f"[error] codex exit code {exit_code} for {spec}")
