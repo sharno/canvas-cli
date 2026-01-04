@@ -1,0 +1,29 @@
+# Canvas API References
+
+- Canvas LMS API Overview: https://canvas.instructure.com/doc/api/
+- API Authentication: https://canvas.instructure.com/doc/api/file.oauth.html
+- Courses API: https://canvas.instructure.com/doc/api/courses.html
+- Assignments API: https://canvas.instructure.com/doc/api/assignments.html
+- Submissions API: https://canvas.instructure.com/doc/api/submissions.html
+- Quizzes API: https://canvas.instructure.com/doc/api/quizzes.html
+- Question Banks API: https://canvas.instructure.com/doc/api/question_banks.html
+- Calendar Events API: https://canvas.instructure.com/doc/api/calendar_events.html
+- Outcomes API: https://canvas.instructure.com/doc/api/outcomes.html
+- Rubrics API: https://canvas.instructure.com/doc/api/rubrics.html
+- External Tools API: https://canvas.instructure.com/doc/api/external_tools.html
+- Users API: https://canvas.instructure.com/doc/api/users.html
+- Files API: https://canvas.instructure.com/doc/api/files.html
+- Modules API: https://canvas.instructure.com/doc/api/modules.html
+- Pages API: https://canvas.instructure.com/doc/api/pages.html
+- Announcements API: https://canvas.instructure.com/doc/api/announcements.html
+- Discussions API: https://canvas.instructure.com/doc/api/discussion_topics.html
+- Assignment Overrides API: https://canvas.instructure.com/doc/api/assignments.html#AssignmentOverrides
+- Peer Reviews API: https://canvas.instructure.com/doc/api/peer_reviews.html
+- Grading Periods API: https://canvas.instructure.com/doc/api/grading_periods.html
+- Gradebook History API: https://canvas.instructure.com/doc/api/gradebook_history.html
+- Conferences API: https://canvas.instructure.com/doc/api/conferences.html
+- Collaborations API: https://canvas.instructure.com/doc/api/collaborations.html
+- Content Migrations API: https://canvas.instructure.com/doc/api/content_migrations.html
+- Sections API: https://canvas.instructure.com/doc/api/sections.html
+- Enrollments API: https://canvas.instructure.com/doc/api/enrollments.html
+- Notifications API: https://canvas.instructure.com/doc/api/notification_preferences.html
