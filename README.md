@@ -16,6 +16,10 @@
 - Rust workspace with `canvas-cli`, `canvas-core`, `canvas-models`.
 - Core workflows: auth, course list/select, assignment list, submission grade.
 
+## Configuration
+- Config file path: `~/.config/canvas-cli/config.toml`
+- Environment overrides file values: `CANVAS_HOST` and `CANVAS_TOKEN` win over `auth.host` and `auth.token`.
+
 ## Milestones
 1) MVP: auth, course list/select, assignment list, submission grade.
 2) Expand: assignment CRUD, file upload, pages/modules.
