@@ -5,6 +5,7 @@ use reqwest::blocking::{Client, Response};
 use reqwest::header::{HeaderMap, RETRY_AFTER};
 use reqwest::{Method, StatusCode};
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use thiserror::Error;
 
 use crate::CanvasConfig;
@@ -170,6 +171,35 @@ impl CanvasClient {
         Ok(items)
     }
 
+    pub fn put_json<T: DeserializeOwned, B: Serialize>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<T, ApiError> {
+        let url = self.build_url(path);
+        let response = self.send_with_retry_request(Method::PUT, &url, |client, method, url| {
+            client.request(method, url).json(body)
+        })?;
+        response.json::<T>().map_err(ApiError::from_reqwest)
+    }
+
+    pub fn post_json<T: DeserializeOwned, B: Serialize>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<T, ApiError> {
+        let url = self.build_url(path);
+        let response = self.send_with_retry_request(Method::POST, &url, |client, method, url| {
+            client.request(method, url).json(body)
+        })?;
+        response.json::<T>().map_err(ApiError::from_reqwest)
+    }
+
+    pub fn delete_json<T: DeserializeOwned>(&self, path: &str) -> Result<T, ApiError> {
+        let response = self.send_with_retry(Method::DELETE, &self.build_url(path))?;
+        response.json::<T>().map_err(ApiError::from_reqwest)
+    }
+
     fn build_url(&self, path: &str) -> String {
         if path.starts_with("http://") || path.starts_with("https://") {
             return path.to_string();
@@ -180,11 +210,23 @@ impl CanvasClient {
     }
 
     fn send_with_retry(&self, method: Method, url: &str) -> Result<Response, ApiError> {
+        self.send_with_retry_request(method, url, |client, method, url| {
+            client.request(method, url)
+        })
+    }
+
+    fn send_with_retry_request<F>(
+        &self,
+        method: Method,
+        url: &str,
+        mut build: F,
+    ) -> Result<Response, ApiError>
+    where
+        F: FnMut(&Client, Method, &str) -> reqwest::blocking::RequestBuilder,
+    {
         let mut attempt = 0;
         loop {
-            let response = self
-                .client
-                .request(method.clone(), url)
+            let response = build(&self.client, method.clone(), url)
                 .bearer_auth(self.token.as_str())
                 .send();
             match response {
@@ -227,14 +269,14 @@ fn should_retry(method: &Method, status: Option<StatusCode>) -> bool {
     if !is_idempotent(method) {
         return false;
     }
-    match status {
+    matches!(
+        status,
         Some(StatusCode::TOO_MANY_REQUESTS)
-        | Some(StatusCode::BAD_GATEWAY)
-        | Some(StatusCode::SERVICE_UNAVAILABLE)
-        | Some(StatusCode::GATEWAY_TIMEOUT)
-        | Some(StatusCode::INTERNAL_SERVER_ERROR) => true,
-        _ => false,
-    }
+            | Some(StatusCode::BAD_GATEWAY)
+            | Some(StatusCode::SERVICE_UNAVAILABLE)
+            | Some(StatusCode::GATEWAY_TIMEOUT)
+            | Some(StatusCode::INTERNAL_SERVER_ERROR)
+    )
 }
 
 fn should_retry_error(method: &Method, err: &reqwest::Error) -> bool {

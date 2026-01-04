@@ -7,3 +7,7 @@
 - CLI output should always include stable JSON keys with an explicit schema version.
 - DueDate parsing uses RFC3339 via `time`; prefer `Score::new(value, max)` when assignment points are known.
 - API client lives in `canvas-core/src/api.rs`; prefer `CanvasClient::get_json`/`get_paginated` and surface `ApiError` details via CLI error JSON.
+- Course visibility updates map to `course[is_public]` and `course[is_public_to_auth_users]` with `public`, `institution`, and `course` options.
+- Assignment grading validates scores against `points_possible` and errors when missing/invalid.
+- Bulk grade CSV import expects `user_id` and `score` headers; JSON import expects an array of objects with those keys.
+- Rubric assessment input must be a non-empty JSON object (string or file) and is parsed via `parse_rubric_assessment`.
