@@ -1,7 +1,13 @@
+#![recursion_limit = "256"]
+
+use std::collections::BTreeSet;
+use std::fs::File;
 use std::io::{self, Write};
 use std::path::PathBuf;
 
-use canvas_models::{AssignmentId, CourseId, UserId};
+use canvas_models::{
+    AssignmentId, CourseId, FileId, FolderId, ModuleId, PageId, ReportType, UserId,
+};
 use clap::{Args, Parser, Subcommand};
 use csv::ReaderBuilder;
 use serde_json::{json, Value};
@@ -77,6 +83,66 @@ enum Command {
     Submission {
         #[command(subcommand)]
         command: SubmissionCommand,
+    },
+    /// Page-related operations
+    #[command(after_help = "Examples:\n  canvas page list --course 42\n  canvas page create --course 42 --title \"Week 1\" --body \"Welcome\" --publish-state published\n  canvas page update --course 42 --page \"week-1\" --body \"Updated\" --publish-state unpublished\n  canvas page publish --course 42 --page \"week-1\" --publish-state published")]
+    Page {
+        #[command(subcommand)]
+        command: PageCommand,
+    },
+    /// Module-related operations
+    #[command(after_help = "Examples:\n  canvas module list --course 42\n  canvas module create --course 42 --name \"Week 1\" --publish-state published\n  canvas module update --course 42 --module 5 --name \"Week 1\" --publish-state unpublished\n  canvas module reorder --course 42 --module 5 --module 9\n  canvas module publish --course 42 --module 5 --publish-state published")]
+    Module {
+        #[command(subcommand)]
+        command: ModuleCommand,
+    },
+    /// File-related operations
+    #[command(after_help = "Examples:\n  canvas file list --course 42\n  canvas file upload --course 42 --file syllabus.pdf\n  canvas file delete --file 100 --confirm")]
+    File {
+        #[command(subcommand)]
+        command: FileCommand,
+    },
+    /// Folder-related operations
+    #[command(after_help = "Examples:\n  canvas folder list --course 42\n  canvas folder create --course 42 --name \"Week 1\" --parent-folder 3")]
+    Folder {
+        #[command(subcommand)]
+        command: FolderCommand,
+    },
+    /// Announcement-related operations
+    #[command(after_help = "Examples:\n  canvas announcement list --course 42\n  canvas announcement create --course 42 --title \"Welcome\" --message \"Hello\"")]
+    Announcement {
+        #[command(subcommand)]
+        command: AnnouncementCommand,
+    },
+    /// Discussion-related operations
+    #[command(after_help = "Examples:\n  canvas discussion list --course 42\n  canvas discussion create --course 42 --title \"Topic\" --message \"Discuss\"")]
+    Discussion {
+        #[command(subcommand)]
+        command: DiscussionCommand,
+    },
+    /// User-related operations
+    #[command(after_help = "Examples:\n  canvas user list --course 42\n  canvas user list --course 42 --role student")]
+    User {
+        #[command(subcommand)]
+        command: UserCommand,
+    },
+    /// Messaging operations
+    #[command(after_help = "Example:\n  canvas message send --user 99 --subject \"Hello\" --body \"Welcome\" --confirm")]
+    Message {
+        #[command(subcommand)]
+        command: MessageCommand,
+    },
+    /// Group-related operations
+    #[command(after_help = "Examples:\n  canvas group list --course 42\n  canvas group create --course 42 --name \"Project Teams\"")]
+    Group {
+        #[command(subcommand)]
+        command: GroupCommand,
+    },
+    /// Analytics and report operations
+    #[command(after_help = "Examples:\n  canvas report gradebook-export --course 42 --format csv\n  canvas report submission-status --course 42 --format json\n  canvas report course-activity --course 42")]
+    Report {
+        #[command(subcommand)]
+        command: ReportCommand,
     },
     /// Natural-language command planning
     #[command(after_help = "Example:\n  canvas ask \"list assignments\" --json")]
@@ -241,10 +307,315 @@ enum SubmissionCommand {
     },
 }
 
+#[derive(Debug, Subcommand)]
+enum PageCommand {
+    /// List pages for a course
+    List {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+    },
+    /// Create a page
+    Create {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Page title
+        #[arg(long)]
+        title: String,
+        /// Page body
+        #[arg(long)]
+        body: String,
+        /// Publish state (published, unpublished)
+        #[arg(long = "publish-state")]
+        publish_state: Option<String>,
+    },
+    /// Update a page
+    Update {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Page id (URL slug)
+        #[arg(long)]
+        page: String,
+        /// Page title
+        #[arg(long)]
+        title: Option<String>,
+        /// Page body
+        #[arg(long)]
+        body: Option<String>,
+        /// Publish state (published, unpublished)
+        #[arg(long = "publish-state")]
+        publish_state: Option<String>,
+    },
+    /// Publish or unpublish a page
+    Publish {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Page id (URL slug)
+        #[arg(long)]
+        page: String,
+        /// Publish state (published, unpublished)
+        #[arg(long = "publish-state")]
+        publish_state: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ModuleCommand {
+    /// List modules for a course
+    List {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+    },
+    /// Create a module
+    Create {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Module name
+        #[arg(long)]
+        name: String,
+        /// Publish state (published, unpublished)
+        #[arg(long = "publish-state")]
+        publish_state: Option<String>,
+    },
+    /// Update a module
+    Update {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Module id
+        #[arg(long)]
+        module: String,
+        /// Module name
+        #[arg(long)]
+        name: Option<String>,
+        /// Publish state (published, unpublished)
+        #[arg(long = "publish-state")]
+        publish_state: Option<String>,
+    },
+    /// Reorder modules
+    Reorder {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Module ids in desired order
+        #[arg(long = "module")]
+        module_ids: Vec<String>,
+    },
+    /// Publish or unpublish a module
+    Publish {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Module id
+        #[arg(long)]
+        module: String,
+        /// Publish state (published, unpublished)
+        #[arg(long = "publish-state")]
+        publish_state: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum FileCommand {
+    /// List files for a course
+    List {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Folder id
+        #[arg(long = "folder")]
+        folder: Option<String>,
+    },
+    /// Upload a file
+    Upload {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// File path to upload
+        #[arg(long)]
+        file: PathBuf,
+        /// Parent folder id
+        #[arg(long = "parent-folder")]
+        parent_folder: Option<String>,
+    },
+    /// Delete a file
+    Delete {
+        /// File id
+        #[arg(long)]
+        file: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum FolderCommand {
+    /// List folders for a course
+    List {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+    },
+    /// Create a folder
+    Create {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Folder name
+        #[arg(long)]
+        name: String,
+        /// Parent folder id
+        #[arg(long = "parent-folder")]
+        parent_folder: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum AnnouncementCommand {
+    /// List announcements for a course
+    List {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+    },
+    /// Create an announcement
+    #[command(visible_alias = "send")]
+    Create {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Announcement title
+        #[arg(long)]
+        title: String,
+        /// Announcement message
+        #[arg(long)]
+        message: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum DiscussionCommand {
+    /// List discussions for a course
+    List {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+    },
+    /// Create a discussion
+    Create {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Discussion title
+        #[arg(long)]
+        title: String,
+        /// Discussion message
+        #[arg(long)]
+        message: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum UserCommand {
+    /// List users in a course
+    List {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Role filter (student, ta, teacher)
+        #[arg(long)]
+        role: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum MessageCommand {
+    /// Send a message to users
+    Send {
+        /// Course id override (required when using role filter)
+        #[arg(long)]
+        course: Option<String>,
+        /// Message subject
+        #[arg(long)]
+        subject: String,
+        /// Message body
+        #[arg(long)]
+        body: String,
+        /// Recipient user id (repeatable)
+        #[arg(long = "user")]
+        user_ids: Vec<String>,
+        /// Role filter (student, ta, teacher)
+        #[arg(long)]
+        role: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum GroupCommand {
+    /// List groups in a course
+    List {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+    },
+    /// Create a group in a course
+    Create {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Group name
+        #[arg(long)]
+        name: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ReportCommand {
+    /// Export the course gradebook
+    GradebookExport {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Output format (json or csv)
+        #[arg(long, value_enum, default_value = "json")]
+        format: ReportFormat,
+        /// Output file path for CSV
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
+    /// Export missing/late submission status
+    SubmissionStatus {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Output format (json or csv)
+        #[arg(long, value_enum, default_value = "json")]
+        format: ReportFormat,
+        /// Output file path for CSV
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
+    /// Fetch course activity summary if available
+    CourseActivity {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+    },
+}
+
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 enum ImportFormat {
     Csv,
     Json,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum ReportFormat {
+    Json,
+    Csv,
 }
 
 #[derive(Debug)]
@@ -337,6 +708,219 @@ enum SubmissionRequest {
 }
 
 #[derive(Debug)]
+struct PageListRequest {
+    course_id: CourseId,
+}
+
+#[derive(Debug)]
+struct PageCreateRequest {
+    course_id: CourseId,
+    input: canvas_core::PageCreateInput,
+}
+
+#[derive(Debug)]
+struct PageUpdateRequest {
+    course_id: CourseId,
+    page_id: PageId,
+    input: canvas_core::PageUpdateInput,
+}
+
+#[derive(Debug)]
+struct PagePublishRequest {
+    course_id: CourseId,
+    page_id: PageId,
+    publish_state: canvas_models::PublishState,
+}
+
+#[derive(Debug)]
+enum PageRequest {
+    List(PageListRequest),
+    Create(PageCreateRequest),
+    Update(PageUpdateRequest),
+    Publish(PagePublishRequest),
+}
+
+#[derive(Debug)]
+struct ModuleListRequest {
+    course_id: CourseId,
+}
+
+#[derive(Debug)]
+struct ModuleCreateRequest {
+    course_id: CourseId,
+    input: canvas_core::ModuleCreateInput,
+}
+
+#[derive(Debug)]
+struct ModuleUpdateRequest {
+    course_id: CourseId,
+    module_id: ModuleId,
+    input: canvas_core::ModuleUpdateInput,
+}
+
+#[derive(Debug)]
+struct ModuleReorderRequest {
+    course_id: CourseId,
+    module_ids: Vec<ModuleId>,
+}
+
+#[derive(Debug)]
+struct ModulePublishRequest {
+    course_id: CourseId,
+    module_id: ModuleId,
+    publish_state: canvas_models::PublishState,
+}
+
+#[derive(Debug)]
+enum ModuleRequest {
+    List(ModuleListRequest),
+    Create(ModuleCreateRequest),
+    Update(ModuleUpdateRequest),
+    Reorder(ModuleReorderRequest),
+    Publish(ModulePublishRequest),
+}
+
+#[derive(Debug)]
+struct FileListRequest {
+    course_id: CourseId,
+    folder_id: Option<FolderId>,
+}
+
+#[derive(Debug)]
+struct FileUploadRequest {
+    course_id: CourseId,
+    input: canvas_core::UploadFileInput,
+}
+
+#[derive(Debug)]
+struct FileDeleteRequest {
+    file_id: FileId,
+}
+
+#[derive(Debug)]
+enum FileRequest {
+    List(FileListRequest),
+    Upload(FileUploadRequest),
+    Delete(FileDeleteRequest),
+}
+
+#[derive(Debug)]
+struct FolderListRequest {
+    course_id: CourseId,
+}
+
+#[derive(Debug)]
+struct FolderCreateRequest {
+    course_id: CourseId,
+    name: canvas_models::FolderName,
+    parent_folder_id: Option<FolderId>,
+}
+
+#[derive(Debug)]
+enum FolderRequest {
+    List(FolderListRequest),
+    Create(FolderCreateRequest),
+}
+
+#[derive(Debug)]
+struct AnnouncementListRequest {
+    course_id: CourseId,
+}
+
+#[derive(Debug)]
+struct AnnouncementCreateRequest {
+    course_id: CourseId,
+    title: String,
+    message: String,
+}
+
+#[derive(Debug)]
+enum AnnouncementRequest {
+    List(AnnouncementListRequest),
+    Create(AnnouncementCreateRequest),
+}
+
+#[derive(Debug)]
+struct DiscussionListRequest {
+    course_id: CourseId,
+}
+
+#[derive(Debug)]
+struct DiscussionCreateRequest {
+    course_id: CourseId,
+    title: String,
+    message: String,
+}
+
+#[derive(Debug)]
+enum DiscussionRequest {
+    List(DiscussionListRequest),
+    Create(DiscussionCreateRequest),
+}
+
+#[derive(Debug)]
+struct UserListRequest {
+    course_id: CourseId,
+    role: Option<canvas_models::UserRole>,
+}
+
+#[derive(Debug)]
+enum UserRequest {
+    List(UserListRequest),
+}
+
+#[derive(Debug)]
+struct MessageSendRequest {
+    course_id: Option<CourseId>,
+    subject: canvas_models::MessageSubject,
+    body: canvas_models::MessageBody,
+    user_ids: Vec<UserId>,
+    role: Option<canvas_models::UserRole>,
+}
+
+#[derive(Debug)]
+enum MessageRequest {
+    Send(MessageSendRequest),
+}
+
+#[derive(Debug)]
+struct GroupListRequest {
+    course_id: CourseId,
+}
+
+#[derive(Debug)]
+struct GroupCreateRequest {
+    course_id: CourseId,
+    name: canvas_models::GroupName,
+}
+
+#[derive(Debug)]
+enum GroupRequest {
+    List(GroupListRequest),
+    Create(GroupCreateRequest),
+}
+
+#[derive(Debug)]
+struct ReportExportRequest {
+    course_id: CourseId,
+    report_type: ReportType,
+    format: ReportFormat,
+    output: Option<PathBuf>,
+}
+
+#[derive(Debug)]
+struct CourseActivitySummaryRequest {
+    course_id: CourseId,
+}
+
+#[derive(Debug)]
+enum ReportRequest {
+    GradebookExport(ReportExportRequest),
+    SubmissionStatus(ReportExportRequest),
+    CourseActivitySummary(CourseActivitySummaryRequest),
+}
+
+#[derive(Debug)]
 struct GlobalOptions {
     course: Option<CourseId>,
     json: bool,
@@ -380,6 +964,10 @@ enum CliError {
     AskExecutionUnsupported,
     #[error("failed to read file at {0}: {1}")]
     FileRead(String, String),
+    #[error("failed to write file at {0}: {1}")]
+    FileWrite(String, String),
+    #[error("invalid report format: {0}")]
+    InvalidReportFormat(String),
     #[error(transparent)]
     Canvas(#[from] canvas_core::CanvasError),
 }
@@ -419,6 +1007,46 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Command::Submission { command } => {
             let request = SubmissionRequest::try_from((command, &global))?;
             handle_submission(request, &global)
+        }
+        Command::Page { command } => {
+            let request = PageRequest::try_from((command, &global))?;
+            handle_page(request, &global)
+        }
+        Command::Module { command } => {
+            let request = ModuleRequest::try_from((command, &global))?;
+            handle_module(request, &global)
+        }
+        Command::File { command } => {
+            let request = FileRequest::try_from((command, &global))?;
+            handle_file(request, &global)
+        }
+        Command::Folder { command } => {
+            let request = FolderRequest::try_from((command, &global))?;
+            handle_folder(request, &global)
+        }
+        Command::Announcement { command } => {
+            let request = AnnouncementRequest::try_from((command, &global))?;
+            handle_announcement(request, &global)
+        }
+        Command::Discussion { command } => {
+            let request = DiscussionRequest::try_from((command, &global))?;
+            handle_discussion(request, &global)
+        }
+        Command::User { command } => {
+            let request = UserRequest::try_from((command, &global))?;
+            handle_user(request, &global)
+        }
+        Command::Message { command } => {
+            let request = MessageRequest::try_from((command, &global))?;
+            handle_message(request, &global)
+        }
+        Command::Group { command } => {
+            let request = GroupRequest::try_from((command, &global))?;
+            handle_group(request, &global)
+        }
+        Command::Report { command } => {
+            let request = ReportRequest::try_from((command, &global))?;
+            handle_report(request, &global)
         }
         Command::Ask { prompt } => handle_ask(&prompt, &global),
     }
@@ -888,6 +1516,780 @@ fn handle_submission(
     Ok(())
 }
 
+fn handle_page(request: PageRequest, global: &GlobalOptions) -> Result<(), CliError> {
+    match request {
+        PageRequest::List(request) => {
+            let planned = vec![PlannedAction {
+                action: "list pages",
+                risk: "none",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("page list", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let pages = canvas_core::list_pages(&config, request.course_id)?;
+            let data = json!({
+                "status": "ok",
+                "course_id": request.course_id.get(),
+                "pages": pages.iter().map(page_summary_json).collect::<Vec<_>>(),
+            });
+            emit_result("page list", data, global);
+            if !global.quiet && !global.json {
+                println!("Found {} pages.", pages.len());
+            }
+        }
+        PageRequest::Create(request) => {
+            let planned = vec![PlannedAction {
+                action: "create page",
+                risk: "creates remote page",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("page create", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let page =
+                canvas_core::create_page(&config, request.course_id, &request.input)?;
+            emit_result(
+                "page create",
+                json!({
+                    "status": "created",
+                    "course_id": request.course_id.get(),
+                    "page": page_summary_json(&page),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Page created.");
+            }
+        }
+        PageRequest::Update(request) => {
+            let planned = vec![PlannedAction {
+                action: "update page",
+                risk: "updates remote page",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("page update", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let page = canvas_core::update_page(
+                &config,
+                request.course_id,
+                request.page_id,
+                &request.input,
+            )?;
+            emit_result(
+                "page update",
+                json!({
+                    "status": "updated",
+                    "course_id": request.course_id.get(),
+                    "page": page_summary_json(&page),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Page updated.");
+            }
+        }
+        PageRequest::Publish(request) => {
+            let planned = vec![PlannedAction {
+                action: "update page publish state",
+                risk: "updates remote page",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("page publish", &planned, global);
+                return Ok(());
+            }
+            let input = canvas_core::PageUpdateInput::new(
+                None,
+                None,
+                Some(request.publish_state),
+            )?;
+            let config = canvas_core::load_merged_config()?;
+            let page = canvas_core::update_page(
+                &config,
+                request.course_id,
+                request.page_id,
+                &input,
+            )?;
+            emit_result(
+                "page publish",
+                json!({
+                    "status": "updated",
+                    "course_id": request.course_id.get(),
+                    "page": page_summary_json(&page),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Page publish state updated.");
+            }
+        }
+    }
+    Ok(())
+}
+
+fn handle_module(request: ModuleRequest, global: &GlobalOptions) -> Result<(), CliError> {
+    match request {
+        ModuleRequest::List(request) => {
+            let planned = vec![PlannedAction {
+                action: "list modules",
+                risk: "none",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("module list", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let modules = canvas_core::list_modules(&config, request.course_id)?;
+            let data = json!({
+                "status": "ok",
+                "course_id": request.course_id.get(),
+                "modules": modules.iter().map(module_summary_json).collect::<Vec<_>>(),
+            });
+            emit_result("module list", data, global);
+            if !global.quiet && !global.json {
+                println!("Found {} modules.", modules.len());
+            }
+        }
+        ModuleRequest::Create(request) => {
+            let planned = vec![PlannedAction {
+                action: "create module",
+                risk: "creates remote module",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("module create", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let module =
+                canvas_core::create_module(&config, request.course_id, &request.input)?;
+            emit_result(
+                "module create",
+                json!({
+                    "status": "created",
+                    "course_id": request.course_id.get(),
+                    "module": module_summary_json(&module),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Module created.");
+            }
+        }
+        ModuleRequest::Update(request) => {
+            let planned = vec![PlannedAction {
+                action: "update module",
+                risk: "updates remote module",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("module update", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let module = canvas_core::update_module(
+                &config,
+                request.course_id,
+                request.module_id,
+                &request.input,
+            )?;
+            emit_result(
+                "module update",
+                json!({
+                    "status": "updated",
+                    "course_id": request.course_id.get(),
+                    "module": module_summary_json(&module),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Module updated.");
+            }
+        }
+        ModuleRequest::Reorder(request) => {
+            let planned = vec![PlannedAction {
+                action: "reorder modules",
+                risk: "updates remote module order",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("module reorder", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let modules =
+                canvas_core::reorder_modules(&config, request.course_id, &request.module_ids)?;
+            emit_result(
+                "module reorder",
+                json!({
+                    "status": "updated",
+                    "course_id": request.course_id.get(),
+                    "modules": modules.iter().map(module_summary_json).collect::<Vec<_>>(),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Modules reordered.");
+            }
+        }
+        ModuleRequest::Publish(request) => {
+            let planned = vec![PlannedAction {
+                action: "update module publish state",
+                risk: "updates remote module",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("module publish", &planned, global);
+                return Ok(());
+            }
+            let input = canvas_core::ModuleUpdateInput::new(
+                None,
+                Some(request.publish_state),
+            )?;
+            let config = canvas_core::load_merged_config()?;
+            let module = canvas_core::update_module(
+                &config,
+                request.course_id,
+                request.module_id,
+                &input,
+            )?;
+            emit_result(
+                "module publish",
+                json!({
+                    "status": "updated",
+                    "course_id": request.course_id.get(),
+                    "module": module_summary_json(&module),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Module publish state updated.");
+            }
+        }
+    }
+    Ok(())
+}
+
+fn handle_file(request: FileRequest, global: &GlobalOptions) -> Result<(), CliError> {
+    match request {
+        FileRequest::List(request) => {
+            let planned = vec![PlannedAction {
+                action: "list files",
+                risk: "none",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("file list", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let files = canvas_core::list_files(
+                &config,
+                request.course_id,
+                request.folder_id,
+            )?;
+            let data = json!({
+                "status": "ok",
+                "course_id": request.course_id.get(),
+                "files": files.iter().map(file_summary_json).collect::<Vec<_>>(),
+            });
+            emit_result("file list", data, global);
+            if !global.quiet && !global.json {
+                println!("Found {} files.", files.len());
+            }
+        }
+        FileRequest::Upload(request) => {
+            let planned = vec![PlannedAction {
+                action: "upload file",
+                risk: "uploads file to Canvas",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("file upload", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let file =
+                canvas_core::upload_file(&config, request.course_id, &request.input)?;
+            emit_result(
+                "file upload",
+                json!({
+                    "status": "uploaded",
+                    "course_id": request.course_id.get(),
+                    "file": file_summary_json(&file),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("File uploaded.");
+            }
+        }
+        FileRequest::Delete(request) => {
+            let planned = vec![PlannedAction {
+                action: "delete file",
+                risk: "deletes remote file",
+                requires_confirmation: true,
+            }];
+            if global.explain {
+                emit_plan("file delete", &planned, global);
+                return Ok(());
+            }
+            require_confirmation(global, "file delete")?;
+            let config = canvas_core::load_merged_config()?;
+            let file = canvas_core::delete_file(&config, request.file_id)?;
+            emit_result(
+                "file delete",
+                json!({
+                    "status": "deleted",
+                    "file": file_summary_json(&file),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("File deleted.");
+            }
+        }
+    }
+    Ok(())
+}
+
+fn handle_folder(request: FolderRequest, global: &GlobalOptions) -> Result<(), CliError> {
+    match request {
+        FolderRequest::List(request) => {
+            let planned = vec![PlannedAction {
+                action: "list folders",
+                risk: "none",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("folder list", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let folders = canvas_core::list_folders(&config, request.course_id)?;
+            let data = json!({
+                "status": "ok",
+                "course_id": request.course_id.get(),
+                "folders": folders.iter().map(folder_summary_json).collect::<Vec<_>>(),
+            });
+            emit_result("folder list", data, global);
+            if !global.quiet && !global.json {
+                println!("Found {} folders.", folders.len());
+            }
+        }
+        FolderRequest::Create(request) => {
+            let planned = vec![PlannedAction {
+                action: "create folder",
+                risk: "creates remote folder",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("folder create", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let folder = canvas_core::create_folder(
+                &config,
+                request.course_id,
+                request.name,
+                request.parent_folder_id,
+            )?;
+            emit_result(
+                "folder create",
+                json!({
+                    "status": "created",
+                    "course_id": request.course_id.get(),
+                    "folder": folder_summary_json(&folder),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Folder created.");
+            }
+        }
+    }
+    Ok(())
+}
+
+fn handle_announcement(
+    request: AnnouncementRequest,
+    global: &GlobalOptions,
+) -> Result<(), CliError> {
+    match request {
+        AnnouncementRequest::List(request) => {
+            let planned = vec![PlannedAction {
+                action: "list announcements",
+                risk: "none",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("announcement list", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let announcements =
+                canvas_core::list_announcements(&config, request.course_id)?;
+            let data = json!({
+                "status": "ok",
+                "course_id": request.course_id.get(),
+                "announcements": announcements.iter().map(announcement_summary_json).collect::<Vec<_>>(),
+            });
+            emit_result("announcement list", data, global);
+            if !global.quiet && !global.json {
+                println!("Found {} announcements.", announcements.len());
+            }
+        }
+        AnnouncementRequest::Create(request) => {
+            let planned = vec![PlannedAction {
+                action: "create announcement",
+                risk: "creates remote announcement",
+                requires_confirmation: true,
+            }];
+            if global.explain {
+                emit_plan("announcement create", &planned, global);
+                return Ok(());
+            }
+            require_confirmation(global, "announcement create")?;
+            let config = canvas_core::load_merged_config()?;
+            let announcement = canvas_core::create_announcement(
+                &config,
+                request.course_id,
+                request.title,
+                request.message,
+            )?;
+            emit_result(
+                "announcement create",
+                json!({
+                    "status": "created",
+                    "course_id": request.course_id.get(),
+                    "announcement": announcement_summary_json(&announcement),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Announcement created.");
+            }
+        }
+    }
+    Ok(())
+}
+
+fn handle_discussion(
+    request: DiscussionRequest,
+    global: &GlobalOptions,
+) -> Result<(), CliError> {
+    match request {
+        DiscussionRequest::List(request) => {
+            let planned = vec![PlannedAction {
+                action: "list discussions",
+                risk: "none",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("discussion list", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let discussions = canvas_core::list_discussions(&config, request.course_id)?;
+            let data = json!({
+                "status": "ok",
+                "course_id": request.course_id.get(),
+                "discussions": discussions.iter().map(discussion_summary_json).collect::<Vec<_>>(),
+            });
+            emit_result("discussion list", data, global);
+            if !global.quiet && !global.json {
+                println!("Found {} discussions.", discussions.len());
+            }
+        }
+        DiscussionRequest::Create(request) => {
+            let planned = vec![PlannedAction {
+                action: "create discussion",
+                risk: "creates remote discussion",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("discussion create", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let discussion = canvas_core::create_discussion(
+                &config,
+                request.course_id,
+                request.title,
+                request.message,
+            )?;
+            emit_result(
+                "discussion create",
+                json!({
+                    "status": "created",
+                    "course_id": request.course_id.get(),
+                    "discussion": discussion_summary_json(&discussion),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Discussion created.");
+            }
+        }
+    }
+    Ok(())
+}
+
+fn handle_user(request: UserRequest, global: &GlobalOptions) -> Result<(), CliError> {
+    match request {
+        UserRequest::List(request) => {
+            let planned = vec![PlannedAction {
+                action: "list users",
+                risk: "none",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("user list", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let users =
+                canvas_core::list_users(&config, request.course_id, request.role)?;
+            let data = json!({
+                "status": "ok",
+                "course_id": request.course_id.get(),
+                "users": users.iter().map(user_summary_json).collect::<Vec<_>>(),
+            });
+            emit_result("user list", data, global);
+            if !global.quiet && !global.json {
+                println!("Found {} users.", users.len());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn handle_message(
+    request: MessageRequest,
+    global: &GlobalOptions,
+) -> Result<(), CliError> {
+    match request {
+        MessageRequest::Send(request) => {
+            let planned = vec![PlannedAction {
+                action: "send message",
+                risk: "sends message to recipients",
+                requires_confirmation: true,
+            }];
+            if global.explain {
+                emit_plan("message send", &planned, global);
+                return Ok(());
+            }
+            require_confirmation(global, "message send")?;
+            let config = canvas_core::load_merged_config()?;
+            let mut recipient_ids = BTreeSet::new();
+            for user_id in request.user_ids {
+                recipient_ids.insert(user_id.get());
+            }
+            if let Some(role) = request.role {
+                let course_id = request.course_id.ok_or(CliError::MissingCourseId)?;
+                let users = canvas_core::list_users(&config, course_id, Some(role))?;
+                for user in users {
+                    recipient_ids.insert(user.id);
+                }
+            }
+            let parsed_ids = recipient_ids
+                .iter()
+                .map(|id| canvas_core::parse_user_id(&id.to_string()))
+                .collect::<Result<Vec<_>, _>>()?;
+            let recipients = canvas_core::parse_recipient_ids(parsed_ids)?;
+            let input = canvas_core::MessageSendInput::new(
+                request.subject,
+                request.body,
+                recipients,
+            );
+            let result = canvas_core::send_message(&config, &input)?;
+            emit_result(
+                "message send",
+                json!({
+                    "status": "sent",
+                    "recipient_count": recipient_ids.len(),
+                    "recipient_ids": recipient_ids.iter().copied().collect::<Vec<_>>(),
+                    "conversation_ids": result.conversation_ids,
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Message sent to {} recipients.", recipient_ids.len());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn handle_group(request: GroupRequest, global: &GlobalOptions) -> Result<(), CliError> {
+    match request {
+        GroupRequest::List(request) => {
+            let planned = vec![PlannedAction {
+                action: "list groups",
+                risk: "none",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("group list", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let groups = canvas_core::list_groups(&config, request.course_id)?;
+            let data = json!({
+                "status": "ok",
+                "course_id": request.course_id.get(),
+                "groups": groups.iter().map(group_summary_json).collect::<Vec<_>>(),
+            });
+            emit_result("group list", data, global);
+            if !global.quiet && !global.json {
+                println!("Found {} groups.", groups.len());
+            }
+        }
+        GroupRequest::Create(request) => {
+            let planned = vec![PlannedAction {
+                action: "create group",
+                risk: "creates remote group",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("group create", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let group = canvas_core::create_group(
+                &config,
+                request.course_id,
+                request.name,
+            )?;
+            emit_result(
+                "group create",
+                json!({
+                    "status": "created",
+                    "course_id": request.course_id.get(),
+                    "group": group_summary_json(&group),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Group created.");
+            }
+        }
+    }
+    Ok(())
+}
+
+fn handle_report(request: ReportRequest, global: &GlobalOptions) -> Result<(), CliError> {
+    match request {
+        ReportRequest::GradebookExport(request) => {
+            handle_report_export("report gradebook-export", request, global)
+        }
+        ReportRequest::SubmissionStatus(request) => {
+            handle_report_export("report submission-status", request, global)
+        }
+        ReportRequest::CourseActivitySummary(request) => {
+            let planned = vec![PlannedAction {
+                action: "fetch course activity summary",
+                risk: "none",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("report course-activity", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let summary =
+                canvas_core::get_course_activity_summary(&config, request.course_id)?;
+            emit_result(
+                "report course-activity",
+                json!({
+                    "status": "ok",
+                    "course_id": request.course_id.get(),
+                    "summary": course_activity_summary_json(&summary),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Course activity summary retrieved.");
+            }
+            Ok(())
+        }
+    }
+}
+
+fn handle_report_export(
+    command: &str,
+    request: ReportExportRequest,
+    global: &GlobalOptions,
+) -> Result<(), CliError> {
+    let planned = vec![PlannedAction {
+        action: "request and download report",
+        risk: "reads report data",
+        requires_confirmation: false,
+    }];
+    if global.explain {
+        emit_plan(command, &planned, global);
+        return Ok(());
+    }
+    if global.json && request.format == ReportFormat::Csv {
+        return Err(CliError::InvalidReportFormat(
+            "json_output_with_csv".to_string(),
+        ));
+    }
+    let config = canvas_core::load_merged_config()?;
+    let report =
+        canvas_core::request_report(&config, request.course_id, request.report_type)?;
+    let report = canvas_core::wait_for_report(
+        &config,
+        request.course_id,
+        request.report_type,
+        report.id,
+        canvas_core::ReportWaitOptions::default(),
+    )?;
+    match request.format {
+        ReportFormat::Json => {
+            emit_result(
+                command,
+                json!({
+                    "status": "ok",
+                    "course_id": request.course_id.get(),
+                    "report": report_summary_json(&report),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Report {} is ready.", report.id);
+            }
+            Ok(())
+        }
+        ReportFormat::Csv => {
+            let file_url = report.file_url.ok_or_else(|| {
+                CliError::Canvas(canvas_core::CanvasError::ReportNotReady(
+                    "missing_file_url".to_string(),
+                ))
+            })?;
+            if let Some(path) = request.output {
+                let mut file = File::create(&path)
+                    .map_err(|err| CliError::FileWrite(path.display().to_string(), err.to_string()))?;
+                canvas_core::download_report_to_writer(&config, &file_url, &mut file)?;
+            } else {
+                let stdout = io::stdout();
+                let mut handle = stdout.lock();
+                canvas_core::download_report_to_writer(&config, &file_url, &mut handle)?;
+            }
+            Ok(())
+        }
+    }
+}
+
 fn handle_ask(prompt: &str, global: &GlobalOptions) -> Result<(), CliError> {
     let plan = plan_from_prompt(prompt);
     if global.explain {
@@ -1109,6 +2511,126 @@ fn submission_summary_json(submission: &canvas_core::SubmissionSummary) -> Value
     })
 }
 
+fn page_summary_json(page: &canvas_core::PageSummary) -> Value {
+    json!({
+        "page_id": page.page_id,
+        "url": page.url,
+        "title": page.title,
+        "body": page.body,
+        "published": page.published,
+        "workflow_state": page.workflow_state,
+        "html_url": page.html_url,
+    })
+}
+
+fn module_summary_json(module: &canvas_core::ModuleSummary) -> Value {
+    json!({
+        "id": module.id,
+        "name": module.name,
+        "published": module.published,
+        "position": module.position,
+        "workflow_state": module.workflow_state,
+        "items_count": module.items_count,
+        "html_url": module.html_url,
+    })
+}
+
+fn file_summary_json(file: &canvas_core::FileSummary) -> Value {
+    json!({
+        "id": file.id,
+        "display_name": file.display_name,
+        "filename": file.filename,
+        "size": file.size,
+        "content_type": file.content_type,
+        "url": file.url,
+        "thumbnail_url": file.thumbnail_url,
+        "updated_at": file.updated_at,
+        "created_at": file.created_at,
+        "folder_id": file.folder_id,
+    })
+}
+
+fn folder_summary_json(folder: &canvas_core::FolderSummary) -> Value {
+    json!({
+        "id": folder.id,
+        "name": folder.name,
+        "full_name": folder.full_name,
+        "context_id": folder.context_id,
+        "parent_folder_id": folder.parent_folder_id,
+        "created_at": folder.created_at,
+        "updated_at": folder.updated_at,
+        "files_count": folder.files_count,
+    })
+}
+
+fn discussion_summary_json(discussion: &canvas_core::DiscussionSummary) -> Value {
+    json!({
+        "id": discussion.id,
+        "title": discussion.title,
+        "message": discussion.message,
+        "posted_at": discussion.posted_at,
+        "discussion_type": discussion.discussion_type,
+        "html_url": discussion.html_url,
+    })
+}
+
+fn announcement_summary_json(
+    announcement: &canvas_core::AnnouncementSummary,
+) -> Value {
+    json!({
+        "id": announcement.id,
+        "title": announcement.title,
+        "message": announcement.message,
+        "posted_at": announcement.posted_at,
+        "html_url": announcement.html_url,
+    })
+}
+
+fn user_summary_json(user: &canvas_core::UserSummary) -> Value {
+    json!({
+        "id": user.id,
+        "name": user.name,
+        "sortable_name": user.sortable_name,
+        "short_name": user.short_name,
+        "login_id": user.login_id,
+        "email": user.email,
+    })
+}
+
+fn group_summary_json(group: &canvas_core::GroupSummary) -> Value {
+    json!({
+        "id": group.id,
+        "name": group.name,
+        "description": group.description,
+        "members_count": group.members_count,
+        "group_category_id": group.group_category_id,
+    })
+}
+
+fn report_summary_json(report: &canvas_core::ReportSummary) -> Value {
+    json!({
+        "id": report.id,
+        "report_type": report.report_type.as_str(),
+        "status": report.status.as_str(),
+        "progress": report.progress,
+        "file_url": report.file_url,
+        "created_at": report.created_at,
+        "started_at": report.started_at,
+        "ended_at": report.ended_at,
+        "updated_at": report.updated_at,
+    })
+}
+
+fn course_activity_summary_json(summary: &canvas_core::CourseActivitySummary) -> Value {
+    json!({
+        "page_views": summary.page_views,
+        "participations": summary.participations,
+        "start_at": summary.start_at,
+        "end_at": summary.end_at,
+        "extra": summary.extra,
+    })
+}
+
 #[derive(Debug)]
 struct ImportRow {
     row: usize,
@@ -1223,9 +2745,10 @@ fn read_file_to_string(path: &PathBuf) -> Result<String, CliError> {
         .map_err(|err| CliError::FileRead(path.display().to_string(), err.to_string()))
 }
 
-fn emit_schema() {
-    let output = json!({
+fn schema_definition() -> Value {
+    json!({
         "version": SCHEMA_VERSION,
+        "schema_version": SCHEMA_VERSION,
         "schemas": {
             "command_result": {
                 "type": "object",
@@ -1262,6 +2785,66 @@ fn emit_schema() {
                         },
                         "required": ["prompt", "rationale", "commands"],
                     },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "auth_check": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "config_init": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "course_list": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "course_show": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "course_set": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "course_update": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
                 },
                 "required": ["ok", "schema_version", "command", "data"],
             },
@@ -1315,6 +2898,196 @@ fn emit_schema() {
                 },
                 "required": ["ok", "schema_version", "command", "data"],
             },
+            "page_list": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "page_mutation": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "module_list": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "module_mutation": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "file_list": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "file_upload": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "file_delete": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "folder_list": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "folder_create": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "announcement_list": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "announcement_create": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "discussion_list": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "discussion_create": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "user_list": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "message_send": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "group_list": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "group_create": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "report_export": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "course_activity_summary": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
             "error": {
                 "type": "object",
                 "properties": {
@@ -1333,7 +3106,11 @@ fn emit_schema() {
                 "required": ["ok", "schema_version", "error"],
             },
         },
-    });
+    })
+}
+
+fn emit_schema() {
+    let output = schema_definition();
     println!("{output}");
 }
 
@@ -1361,6 +3138,8 @@ fn error_code(error: &CliError) -> &'static str {
         CliError::ConfirmationRequired(_) => "confirmation_required",
         CliError::AskExecutionUnsupported => "ask_execution_unsupported",
         CliError::FileRead(_, _) => "file_read",
+        CliError::FileWrite(_, _) => "file_write",
+        CliError::InvalidReportFormat(_) => "invalid_report_format",
         CliError::Canvas(canvas_error) => match canvas_error {
             canvas_core::CanvasError::InvalidCourseId(_) => "invalid_course_id",
             canvas_core::CanvasError::InvalidAssignmentId(_) => "invalid_assignment_id",
@@ -1369,6 +3148,23 @@ fn error_code(error: &CliError) -> &'static str {
             }
             canvas_core::CanvasError::InvalidUserId(_) => "invalid_user_id",
             canvas_core::CanvasError::InvalidSubmissionId(_) => "invalid_submission_id",
+            canvas_core::CanvasError::InvalidPageId(_) => "invalid_page_id",
+            canvas_core::CanvasError::InvalidPageTitle(_) => "invalid_page_title",
+            canvas_core::CanvasError::InvalidPageBody(_) => "invalid_page_body",
+            canvas_core::CanvasError::InvalidModuleId(_) => "invalid_module_id",
+            canvas_core::CanvasError::InvalidModuleName(_) => "invalid_module_name",
+            canvas_core::CanvasError::InvalidFileId(_) => "invalid_file_id",
+            canvas_core::CanvasError::InvalidFolderId(_) => "invalid_folder_id",
+            canvas_core::CanvasError::InvalidFolderName(_) => "invalid_folder_name",
+            canvas_core::CanvasError::InvalidDiscussionId(_) => "invalid_discussion_id",
+            canvas_core::CanvasError::InvalidGroupId(_) => "invalid_group_id",
+            canvas_core::CanvasError::InvalidGroupName(_) => "invalid_group_name",
+            canvas_core::CanvasError::InvalidUserRole(_) => "invalid_user_role",
+            canvas_core::CanvasError::InvalidMessageSubject(_) => {
+                "invalid_message_subject"
+            }
+            canvas_core::CanvasError::InvalidMessageBody(_) => "invalid_message_body",
+            canvas_core::CanvasError::InvalidRecipients(_) => "invalid_recipients",
             canvas_core::CanvasError::InvalidScore(_) => "invalid_score",
             canvas_core::CanvasError::InvalidPointsPossible(_) => "invalid_points_possible",
             canvas_core::CanvasError::InvalidDueDate(_) => "invalid_due_date",
@@ -1379,14 +3175,22 @@ fn error_code(error: &CliError) -> &'static str {
             }
             canvas_core::CanvasError::InvalidCourseVisibility(_) => "invalid_course_visibility",
             canvas_core::CanvasError::InvalidGradingSchemeId(_) => "invalid_grading_scheme_id",
+            canvas_core::CanvasError::InvalidReportType(_) => "invalid_report_type",
             canvas_core::CanvasError::InvalidCourseDates(_) => "invalid_course_dates",
             canvas_core::CanvasError::InvalidCourseUpdate(_) => "invalid_course_update",
             canvas_core::CanvasError::InvalidAssignmentUpdate(_) => {
                 "invalid_assignment_update"
             }
+            canvas_core::CanvasError::InvalidPageUpdate(_) => "invalid_page_update",
+            canvas_core::CanvasError::InvalidModuleUpdate(_) => "invalid_module_update",
+            canvas_core::CanvasError::InvalidModuleReorder(_) => "invalid_module_reorder",
             canvas_core::CanvasError::MissingAssignmentPoints(_) => {
                 "missing_assignment_points"
             }
+            canvas_core::CanvasError::InvalidFileUpload(_) => "invalid_file_upload",
+            canvas_core::CanvasError::ReportNotReady(_) => "report_not_ready",
+            canvas_core::CanvasError::ReportDownloadFailed(_) => "report_download_failed",
+            canvas_core::CanvasError::ReportTimeout(_) => "report_timeout",
             canvas_core::CanvasError::InvalidHost(_) => "invalid_host",
             canvas_core::CanvasError::InvalidToken => "invalid_token",
             canvas_core::CanvasError::MissingConfig(_) => "missing_config",
@@ -1407,6 +3211,8 @@ fn error_details(error: &CliError) -> Value {
         }
         CliError::MissingCourseId => json!({ "field": "course" }),
         CliError::FileRead(path, detail) => json!({ "path": path, "detail": detail }),
+        CliError::FileWrite(path, detail) => json!({ "path": path, "detail": detail }),
+        CliError::InvalidReportFormat(detail) => json!({ "detail": detail }),
         CliError::Canvas(canvas_error) => match canvas_error {
             canvas_core::CanvasError::InvalidCourseId(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidAssignmentId(raw) => json!({ "input": raw }),
@@ -1415,6 +3221,25 @@ fn error_details(error: &CliError) -> Value {
             }
             canvas_core::CanvasError::InvalidUserId(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidSubmissionId(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidPageId(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidPageTitle(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidPageBody(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidModuleId(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidModuleName(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidFileId(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidFolderId(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidFolderName(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidDiscussionId(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidGroupId(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidGroupName(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidUserRole(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidMessageSubject(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidMessageBody(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidRecipients(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidScore(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidPointsPossible(raw) => {
                 json!({ "input": raw })
@@ -1427,13 +3252,35 @@ fn error_details(error: &CliError) -> Value {
             }
             canvas_core::CanvasError::InvalidCourseVisibility(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidGradingSchemeId(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidReportType(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidCourseDates(detail) => json!({ "detail": detail }),
             canvas_core::CanvasError::InvalidCourseUpdate(detail) => json!({ "detail": detail }),
             canvas_core::CanvasError::InvalidAssignmentUpdate(detail) => {
                 json!({ "detail": detail })
             }
+            canvas_core::CanvasError::InvalidPageUpdate(detail) => {
+                json!({ "detail": detail })
+            }
+            canvas_core::CanvasError::InvalidModuleUpdate(detail) => {
+                json!({ "detail": detail })
+            }
+            canvas_core::CanvasError::InvalidModuleReorder(detail) => {
+                json!({ "detail": detail })
+            }
             canvas_core::CanvasError::MissingAssignmentPoints(assignment_id) => {
                 json!({ "assignment_id": assignment_id })
+            }
+            canvas_core::CanvasError::InvalidFileUpload(detail) => {
+                json!({ "detail": detail })
+            }
+            canvas_core::CanvasError::ReportNotReady(detail) => {
+                json!({ "detail": detail })
+            }
+            canvas_core::CanvasError::ReportDownloadFailed(detail) => {
+                json!({ "detail": detail })
+            }
+            canvas_core::CanvasError::ReportTimeout(detail) => {
+                json!({ "detail": detail })
             }
             canvas_core::CanvasError::InvalidHost(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::MissingConfig(path) => json!({ "path": path }),
@@ -1720,6 +3567,539 @@ impl TryFrom<(SubmissionCommand, &GlobalOptions)> for SubmissionRequest {
     }
 }
 
+impl TryFrom<(PageCommand, &GlobalOptions)> for PageRequest {
+    type Error = CliError;
+
+    fn try_from(
+        input: (PageCommand, &GlobalOptions),
+    ) -> Result<Self, Self::Error> {
+        let (command, global) = input;
+        match command {
+            PageCommand::List { course } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                Ok(PageRequest::List(PageListRequest { course_id }))
+            }
+            PageCommand::Create {
+                course,
+                title,
+                body,
+                publish_state,
+            } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let title = canvas_core::parse_page_title(&title)?;
+                let body = canvas_core::parse_page_body(&body)?;
+                let publish_state = match publish_state {
+                    Some(raw) => Some(canvas_core::parse_publish_state(&raw)?),
+                    None => None,
+                };
+                let input =
+                    canvas_core::PageCreateInput::new(title, body, publish_state);
+                Ok(PageRequest::Create(PageCreateRequest { course_id, input }))
+            }
+            PageCommand::Update {
+                course,
+                page,
+                title,
+                body,
+                publish_state,
+            } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let page_id = canvas_core::parse_page_id(&page)?;
+                let title = match title {
+                    Some(raw) => Some(canvas_core::parse_page_title(&raw)?),
+                    None => None,
+                };
+                let body = match body {
+                    Some(raw) => Some(canvas_core::parse_page_body(&raw)?),
+                    None => None,
+                };
+                let publish_state = match publish_state {
+                    Some(raw) => Some(canvas_core::parse_publish_state(&raw)?),
+                    None => None,
+                };
+                let input =
+                    canvas_core::PageUpdateInput::new(title, body, publish_state)?;
+                Ok(PageRequest::Update(PageUpdateRequest {
+                    course_id,
+                    page_id,
+                    input,
+                }))
+            }
+            PageCommand::Publish {
+                course,
+                page,
+                publish_state,
+            } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let page_id = canvas_core::parse_page_id(&page)?;
+                let publish_state = canvas_core::parse_publish_state(&publish_state)?;
+                Ok(PageRequest::Publish(PagePublishRequest {
+                    course_id,
+                    page_id,
+                    publish_state,
+                }))
+            }
+        }
+    }
+}
+
+impl TryFrom<(ModuleCommand, &GlobalOptions)> for ModuleRequest {
+    type Error = CliError;
+
+    fn try_from(
+        input: (ModuleCommand, &GlobalOptions),
+    ) -> Result<Self, Self::Error> {
+        let (command, global) = input;
+        match command {
+            ModuleCommand::List { course } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                Ok(ModuleRequest::List(ModuleListRequest { course_id }))
+            }
+            ModuleCommand::Create {
+                course,
+                name,
+                publish_state,
+            } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let name = canvas_core::parse_module_name(&name)?;
+                let publish_state = match publish_state {
+                    Some(raw) => Some(canvas_core::parse_publish_state(&raw)?),
+                    None => None,
+                };
+                let input =
+                    canvas_core::ModuleCreateInput::new(name, publish_state);
+                Ok(ModuleRequest::Create(ModuleCreateRequest { course_id, input }))
+            }
+            ModuleCommand::Update {
+                course,
+                module,
+                name,
+                publish_state,
+            } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let module_id = canvas_core::parse_module_id(&module)?;
+                let name = match name {
+                    Some(raw) => Some(canvas_core::parse_module_name(&raw)?),
+                    None => None,
+                };
+                let publish_state = match publish_state {
+                    Some(raw) => Some(canvas_core::parse_publish_state(&raw)?),
+                    None => None,
+                };
+                let input =
+                    canvas_core::ModuleUpdateInput::new(name, publish_state)?;
+                Ok(ModuleRequest::Update(ModuleUpdateRequest {
+                    course_id,
+                    module_id,
+                    input,
+                }))
+            }
+            ModuleCommand::Reorder { course, module_ids } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let parsed_ids = module_ids
+                    .iter()
+                    .map(|raw| canvas_core::parse_module_id(raw))
+                    .collect::<Result<Vec<_>, _>>()?;
+                if parsed_ids.is_empty() {
+                    return Err(CliError::Canvas(canvas_core::CanvasError::InvalidModuleReorder(
+                        "empty_order".to_string(),
+                    )));
+                }
+                Ok(ModuleRequest::Reorder(ModuleReorderRequest {
+                    course_id,
+                    module_ids: parsed_ids,
+                }))
+            }
+            ModuleCommand::Publish {
+                course,
+                module,
+                publish_state,
+            } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let module_id = canvas_core::parse_module_id(&module)?;
+                let publish_state = canvas_core::parse_publish_state(&publish_state)?;
+                Ok(ModuleRequest::Publish(ModulePublishRequest {
+                    course_id,
+                    module_id,
+                    publish_state,
+                }))
+            }
+        }
+    }
+}
+
+impl TryFrom<(FileCommand, &GlobalOptions)> for FileRequest {
+    type Error = CliError;
+
+    fn try_from(
+        input: (FileCommand, &GlobalOptions),
+    ) -> Result<Self, Self::Error> {
+        let (command, global) = input;
+        match command {
+            FileCommand::List { course, folder } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let folder_id = match folder {
+                    Some(raw) => Some(canvas_core::parse_folder_id(&raw)?),
+                    None => None,
+                };
+                Ok(FileRequest::List(FileListRequest {
+                    course_id,
+                    folder_id,
+                }))
+            }
+            FileCommand::Upload {
+                course,
+                file,
+                parent_folder,
+            } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let parent_folder_id = match parent_folder {
+                    Some(raw) => Some(canvas_core::parse_folder_id(&raw)?),
+                    None => None,
+                };
+                let input = canvas_core::UploadFileInput::from_path(
+                    file,
+                    parent_folder_id,
+                )?;
+                Ok(FileRequest::Upload(FileUploadRequest { course_id, input }))
+            }
+            FileCommand::Delete { file } => {
+                let file_id = canvas_core::parse_file_id(&file)?;
+                Ok(FileRequest::Delete(FileDeleteRequest { file_id }))
+            }
+        }
+    }
+}
+
+impl TryFrom<(FolderCommand, &GlobalOptions)> for FolderRequest {
+    type Error = CliError;
+
+    fn try_from(
+        input: (FolderCommand, &GlobalOptions),
+    ) -> Result<Self, Self::Error> {
+        let (command, global) = input;
+        match command {
+            FolderCommand::List { course } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                Ok(FolderRequest::List(FolderListRequest { course_id }))
+            }
+            FolderCommand::Create {
+                course,
+                name,
+                parent_folder,
+            } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let name = canvas_core::parse_folder_name(&name)?;
+                let parent_folder_id = match parent_folder {
+                    Some(raw) => Some(canvas_core::parse_folder_id(&raw)?),
+                    None => None,
+                };
+                Ok(FolderRequest::Create(FolderCreateRequest {
+                    course_id,
+                    name,
+                    parent_folder_id,
+                }))
+            }
+        }
+    }
+}
+
+impl TryFrom<(AnnouncementCommand, &GlobalOptions)> for AnnouncementRequest {
+    type Error = CliError;
+
+    fn try_from(
+        input: (AnnouncementCommand, &GlobalOptions),
+    ) -> Result<Self, Self::Error> {
+        let (command, global) = input;
+        match command {
+            AnnouncementCommand::List { course } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                Ok(AnnouncementRequest::List(AnnouncementListRequest {
+                    course_id,
+                }))
+            }
+            AnnouncementCommand::Create {
+                course,
+                title,
+                message,
+            } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                Ok(AnnouncementRequest::Create(AnnouncementCreateRequest {
+                    course_id,
+                    title,
+                    message,
+                }))
+            }
+        }
+    }
+}
+
+impl TryFrom<(DiscussionCommand, &GlobalOptions)> for DiscussionRequest {
+    type Error = CliError;
+
+    fn try_from(
+        input: (DiscussionCommand, &GlobalOptions),
+    ) -> Result<Self, Self::Error> {
+        let (command, global) = input;
+        match command {
+            DiscussionCommand::List { course } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                Ok(DiscussionRequest::List(DiscussionListRequest { course_id }))
+            }
+            DiscussionCommand::Create {
+                course,
+                title,
+                message,
+            } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                Ok(DiscussionRequest::Create(DiscussionCreateRequest {
+                    course_id,
+                    title,
+                    message,
+                }))
+            }
+        }
+    }
+}
+
+impl TryFrom<(UserCommand, &GlobalOptions)> for UserRequest {
+    type Error = CliError;
+
+    fn try_from(
+        input: (UserCommand, &GlobalOptions),
+    ) -> Result<Self, Self::Error> {
+        let (command, global) = input;
+        match command {
+            UserCommand::List { course, role } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let role = match role {
+                    Some(raw) => Some(canvas_core::parse_user_role(&raw)?),
+                    None => None,
+                };
+                Ok(UserRequest::List(UserListRequest { course_id, role }))
+            }
+        }
+    }
+}
+
+impl TryFrom<(MessageCommand, &GlobalOptions)> for MessageRequest {
+    type Error = CliError;
+
+    fn try_from(
+        input: (MessageCommand, &GlobalOptions),
+    ) -> Result<Self, Self::Error> {
+        let (command, global) = input;
+        match command {
+            MessageCommand::Send {
+                course,
+                subject,
+                body,
+                user_ids,
+                role,
+            } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                };
+                let subject = canvas_core::parse_message_subject(&subject)?;
+                let body = canvas_core::parse_message_body(&body)?;
+                let parsed_user_ids = user_ids
+                    .iter()
+                    .map(|raw| canvas_core::parse_user_id(raw))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let role = match role {
+                    Some(raw) => Some(canvas_core::parse_user_role(&raw)?),
+                    None => None,
+                };
+                if parsed_user_ids.is_empty() && role.is_none() {
+                    return Err(CliError::Canvas(
+                        canvas_core::CanvasError::InvalidRecipients(
+                            "empty".to_string(),
+                        ),
+                    ));
+                }
+                if role.is_some() && course_id.is_none() {
+                    return Err(CliError::MissingCourseId);
+                }
+                Ok(MessageRequest::Send(MessageSendRequest {
+                    course_id,
+                    subject,
+                    body,
+                    user_ids: parsed_user_ids,
+                    role,
+                }))
+            }
+        }
+    }
+}
+
+impl TryFrom<(GroupCommand, &GlobalOptions)> for GroupRequest {
+    type Error = CliError;
+
+    fn try_from(
+        input: (GroupCommand, &GlobalOptions),
+    ) -> Result<Self, Self::Error> {
+        let (command, global) = input;
+        match command {
+            GroupCommand::List { course } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                Ok(GroupRequest::List(GroupListRequest { course_id }))
+            }
+            GroupCommand::Create { course, name } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let name = canvas_core::parse_group_name(&name)?;
+                Ok(GroupRequest::Create(GroupCreateRequest { course_id, name }))
+            }
+        }
+    }
+}
+
+impl TryFrom<(ReportCommand, &GlobalOptions)> for ReportRequest {
+    type Error = CliError;
+
+    fn try_from(
+        input: (ReportCommand, &GlobalOptions),
+    ) -> Result<Self, Self::Error> {
+        let (command, global) = input;
+        match command {
+            ReportCommand::GradebookExport {
+                course,
+                format,
+                output,
+            } => {
+                if format == ReportFormat::Json && output.is_some() {
+                    return Err(CliError::InvalidReportFormat(
+                        "output_requires_csv".to_string(),
+                    ));
+                }
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                Ok(ReportRequest::GradebookExport(ReportExportRequest {
+                    course_id,
+                    report_type: ReportType::GradebookExport,
+                    format,
+                    output,
+                }))
+            }
+            ReportCommand::SubmissionStatus {
+                course,
+                format,
+                output,
+            } => {
+                if format == ReportFormat::Json && output.is_some() {
+                    return Err(CliError::InvalidReportFormat(
+                        "output_requires_csv".to_string(),
+                    ));
+                }
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                Ok(ReportRequest::SubmissionStatus(ReportExportRequest {
+                    course_id,
+                    report_type: ReportType::MissingSubmissions,
+                    format,
+                    output,
+                }))
+            }
+            ReportCommand::CourseActivity { course } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                Ok(ReportRequest::CourseActivitySummary(
+                    CourseActivitySummaryRequest { course_id },
+                ))
+            }
+        }
+    }
+}
+
 fn run_init(config_path: &std::path::Path) -> Result<(), canvas_core::CanvasError> {
     let host_input = prompt("Canvas host (e.g., https://school.instructure.com): ")?;
     let host = canvas_core::parse_host(&host_input)?;
@@ -1767,7 +4147,11 @@ fn create_config_dir(path: &std::path::Path) -> Result<(), canvas_core::CanvasEr
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_import_row, plan_from_prompt, ImportRow, PlannedCommand};
+    use super::{
+        parse_import_row, plan_from_prompt, schema_definition, ImportRow,
+        PlannedCommand, SCHEMA_VERSION,
+    };
+    use serde_json::Value;
 
     #[test]
     fn ask_plan_detects_auth_check() {
@@ -1819,8 +4203,32 @@ mod tests {
             user_id: "5".to_string(),
             score: "9".to_string(),
         };
-        let parsed = parse_import_row(row, 10.0).expect("parsed");
+        let parsed =
+            parse_import_row(row, 10.0).unwrap_or_else(|err| panic!("{err:?}"));
         assert_eq!(parsed.1.get(), 5);
         assert_eq!(parsed.2.value(), 9.0);
+    }
+
+    #[test]
+    fn schema_includes_core_groups() {
+        let schema = schema_definition();
+        let schemas = schema
+            .get("schemas")
+            .and_then(Value::as_object)
+            .unwrap_or_else(|| panic!("schemas map"));
+        for key in [
+            "auth_check",
+            "config_init",
+            "course_list",
+            "course_show",
+            "course_set",
+            "course_update",
+        ] {
+            assert!(schemas.contains_key(key), "missing schema {key}");
+        }
+        assert_eq!(
+            schema.get("schema_version").and_then(Value::as_str),
+            Some(SCHEMA_VERSION)
+        );
     }
 }

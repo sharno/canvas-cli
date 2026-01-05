@@ -16,6 +16,11 @@
 - Rust workspace with `canvas-cli`, `canvas-core`, `canvas-models`.
 - Core workflows: auth, course list/select, assignment list, submission grade.
 
+## JSON Output
+- Every `--json` response includes stable top-level keys: `ok`, `schema_version`, and `command`.
+- Success responses carry `data` with command-specific keys; error responses include `error` with `code`, `message`, and `details`.
+- Use `canvas --schema` to retrieve the JSON schemas for each command group and confirm the current `schema_version`.
+
 ## Configuration
 - Config file path: `~/.config/canvas-cli/config.toml`
 - Environment overrides file values: `CANVAS_HOST` and `CANVAS_TOKEN` win over `auth.host` and `auth.token`.

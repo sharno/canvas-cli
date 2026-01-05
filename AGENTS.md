@@ -11,3 +11,6 @@
 - Assignment grading validates scores against `points_possible` and errors when missing/invalid.
 - Bulk grade CSV import expects `user_id` and `score` headers; JSON import expects an array of objects with those keys.
 - Rubric assessment input must be a non-empty JSON object (string or file) and is parsed via `parse_rubric_assessment`.
+- Content management lives in `canvas-core/src/content.rs`; file uploads require a preflight `/files` call and a multipart POST to the returned `upload_url`, with size/path validation done before the API call.
+- Report exports use `ReportType` + `/courses/:course_id/reports/:report_type`, poll with `wait_for_report`, and stream downloads via `download_report_to_writer` to avoid large in-memory buffers.
+- Keep `canvas --schema` outputs in sync with JSON response keys, and bump `schema_version` when shapes change.

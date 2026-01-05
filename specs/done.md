@@ -1,3 +1,12 @@
 - C:/Users/sharno/projects/canvas-cli/specs/0000-overview.md
 - C:/Users/sharno/projects/canvas-cli/specs/0001-workspace-foundation.md
 - C:/Users/sharno/projects/canvas-cli/specs/0002-auth-config.md
+- C:/Users/sharno/projects/canvas-cli/specs/0003-cli-ux.md
+- C:/Users/sharno/projects/canvas-cli/specs/0004-models-validation.md
+- C:/Users/sharno/projects/canvas-cli/specs/0005-api-client.md
+- C:/Users/sharno/projects/canvas-cli/specs/0006-course-management.md
+- C:/Users/sharno/projects/canvas-cli/specs/0007-assignments-grading.md
+- C:/Users/sharno/projects/canvas-cli/specs/0008-content-management.md
+- C:/Users/sharno/projects/canvas-cli/specs/0009-people-communication.md
+- C:/Users/sharno/projects/canvas-cli/specs/0010-analytics-reports.md
+- C:/Users/sharno/projects/canvas-cli/specs/0011-llm-output-schemas.md
