@@ -14,3 +14,4 @@
 - Content management lives in `canvas-core/src/content.rs`; file uploads require a preflight `/files` call and a multipart POST to the returned `upload_url`, with size/path validation done before the API call.
 - Report exports use `ReportType` + `/courses/:course_id/reports/:report_type`, poll with `wait_for_report`, and stream downloads via `download_report_to_writer` to avoid large in-memory buffers.
 - Keep `canvas --schema` outputs in sync with JSON response keys, and bump `schema_version` when shapes change.
+- Snapshot tests live in `canvas-cli/tests/snapshots`; regenerate with `cargo run -p canvas-cli -- --schema` and `cargo run -p canvas-cli -- --help`.

@@ -4148,10 +4148,12 @@ fn create_config_dir(path: &std::path::Path) -> Result<(), canvas_core::CanvasEr
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_import_row, plan_from_prompt, schema_definition, ImportRow,
+        parse_import_row, plan_from_prompt, schema_definition, Cli, ImportRow,
         PlannedCommand, SCHEMA_VERSION,
     };
+    use clap::CommandFactory;
     use serde_json::Value;
+    use std::path::PathBuf;
 
     #[test]
     fn ask_plan_detects_auth_check() {
@@ -4230,5 +4232,35 @@ mod tests {
             schema.get("schema_version").and_then(Value::as_str),
             Some(SCHEMA_VERSION)
         );
+    }
+
+    #[test]
+    fn schema_snapshot_matches() {
+        let schema = schema_definition();
+        let actual = serde_json::to_string(&schema)
+            .unwrap_or_else(|err| panic!("schema json: {err}"));
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("snapshots")
+            .join("schema.json");
+        let expected =
+            std::fs::read_to_string(&path).unwrap_or_else(|_| panic!("{path:?}"));
+        assert_eq!(actual.trim(), expected.trim());
+    }
+
+    #[test]
+    fn cli_help_snapshot_matches() {
+        let help = Cli::command().render_long_help().to_string();
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("snapshots")
+            .join("cli-help.txt");
+        let expected =
+            std::fs::read_to_string(&path).unwrap_or_else(|_| panic!("{path:?}"));
+        assert_eq!(normalize_newlines(&help).trim(), normalize_newlines(&expected).trim());
+    }
+
+    fn normalize_newlines(value: &str) -> String {
+        value.replace("\r\n", "\n")
     }
 }
