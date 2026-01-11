@@ -1,10 +1,18 @@
 use canvas_models::{
-    AssignmentId, AssignmentName, CourseId, DueDate, PointsPossible, PublishState,
-    RubricAssessment, Score, UserId,
+    AssignmentId, AssignmentName, AssignmentOverride, AssignmentOverrides, CourseId,
+    DueDate, GradingPostingPolicy, GroupAssignmentMode, GroupAssignmentSettings,
+    MutedState, PeerReviewMode, PeerReviewSettings, PointsPossible,
+    PublishState, RubricAssessment, Score, UserId,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{CanvasClient, CanvasConfig, CanvasError};
+
+#[derive(Debug, Deserialize)]
+struct ApiGradingPostingPolicy {
+    #[serde(default)]
+    post_manually: bool,
+}
 
 #[derive(Debug, Deserialize)]
 struct ApiAssignment {
@@ -19,10 +27,82 @@ struct ApiAssignment {
     published: Option<bool>,
     #[serde(default)]
     workflow_state: Option<String>,
+    #[serde(default)]
+    peer_reviews: Option<bool>,
+    #[serde(default)]
+    automatic_peer_reviews: Option<bool>,
+    #[serde(default)]
+    peer_reviews_assign_at: Option<String>,
+    #[serde(default)]
+    peer_reviews_due_at: Option<String>,
+    #[serde(default)]
+    group_category_id: Option<u64>,
+    #[serde(default)]
+    grade_group_students_individually: Option<bool>,
+    #[serde(default)]
+    override_count: Option<u64>,
+    #[serde(default, alias = "overrides")]
+    assignment_overrides: Option<Vec<serde_json::Value>>,
+    #[serde(default)]
+    grading_posting_policy: Option<ApiGradingPostingPolicy>,
+    #[serde(default)]
+    muted: Option<bool>,
 }
 
 impl ApiAssignment {
     fn into_summary(self) -> AssignmentSummary {
+        let override_count = self.override_count.or_else(|| {
+            self.assignment_overrides
+                .as_ref()
+                .map(|overrides| overrides.len() as u64)
+        });
+        let peer_reviews = match self.peer_reviews {
+            Some(true) => {
+                let mode = if self.automatic_peer_reviews.unwrap_or(false) {
+                    PeerReviewMode::Automatic
+                } else {
+                    PeerReviewMode::Manual
+                };
+                let assign_at = match mode {
+                    PeerReviewMode::Automatic => self.peer_reviews_assign_at,
+                    PeerReviewMode::Manual => None,
+                };
+                Some(AssignmentPeerReviewSummary {
+                    mode,
+                    assign_at,
+                    due_at: self.peer_reviews_due_at,
+                })
+            }
+            _ => None,
+        };
+        let group_settings = match self.group_category_id {
+            Some(raw) if raw > 0 => Some(AssignmentGroupSummary {
+                mode: GroupAssignmentMode::Group,
+                category_id: Some(raw),
+                grade_individually: self
+                    .grade_group_students_individually
+                    .unwrap_or(false),
+            }),
+            _ => Some(AssignmentGroupSummary {
+                mode: GroupAssignmentMode::Individual,
+                category_id: None,
+                grade_individually: false,
+            }),
+        };
+        let grading_posting_policy = self.grading_posting_policy.map(|policy| {
+            if policy.post_manually {
+                GradingPostingPolicy::Manual
+            } else {
+                GradingPostingPolicy::Automatic
+            }
+        });
+        let muted = self.muted.map(|muted| {
+            if muted {
+                MutedState::Muted
+            } else {
+                MutedState::Unmuted
+            }
+        });
         AssignmentSummary {
             id: self.id,
             name: self.name,
@@ -30,6 +110,11 @@ impl ApiAssignment {
             due_at: self.due_at,
             published: self.published,
             workflow_state: self.workflow_state,
+            override_count,
+            peer_reviews,
+            group_assignment: group_settings,
+            grading_posting_policy,
+            muted,
         }
     }
 }
@@ -42,6 +127,25 @@ pub struct AssignmentSummary {
     pub due_at: Option<String>,
     pub published: Option<bool>,
     pub workflow_state: Option<String>,
+    pub override_count: Option<u64>,
+    pub peer_reviews: Option<AssignmentPeerReviewSummary>,
+    pub group_assignment: Option<AssignmentGroupSummary>,
+    pub grading_posting_policy: Option<GradingPostingPolicy>,
+    pub muted: Option<MutedState>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AssignmentPeerReviewSummary {
+    pub mode: PeerReviewMode,
+    pub assign_at: Option<String>,
+    pub due_at: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AssignmentGroupSummary {
+    pub mode: GroupAssignmentMode,
+    pub category_id: Option<u64>,
+    pub grade_individually: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -50,6 +154,9 @@ pub struct AssignmentCreateInput {
     pub points_possible: Option<PointsPossible>,
     pub due_at: Option<DueDate>,
     pub publish_state: Option<PublishState>,
+    pub peer_reviews: Option<PeerReviewSettings>,
+    pub group_assignment: Option<GroupAssignmentSettings>,
+    pub overrides: Option<AssignmentOverrides>,
 }
 
 impl AssignmentCreateInput {
@@ -58,12 +165,18 @@ impl AssignmentCreateInput {
         points_possible: Option<PointsPossible>,
         due_at: Option<DueDate>,
         publish_state: Option<PublishState>,
+        peer_reviews: Option<PeerReviewSettings>,
+        group_assignment: Option<GroupAssignmentSettings>,
+        overrides: Option<AssignmentOverrides>,
     ) -> Self {
         Self {
             name,
             points_possible,
             due_at,
             publish_state,
+            peer_reviews,
+            group_assignment,
+            overrides,
         }
     }
 }
@@ -74,6 +187,9 @@ pub struct AssignmentUpdateInput {
     pub points_possible: Option<PointsPossible>,
     pub due_at: Option<DueDate>,
     pub publish_state: Option<PublishState>,
+    pub peer_reviews: Option<PeerReviewSettings>,
+    pub group_assignment: Option<GroupAssignmentSettings>,
+    pub overrides: Option<AssignmentOverrides>,
 }
 
 impl AssignmentUpdateInput {
@@ -82,11 +198,17 @@ impl AssignmentUpdateInput {
         points_possible: Option<PointsPossible>,
         due_at: Option<DueDate>,
         publish_state: Option<PublishState>,
+        peer_reviews: Option<PeerReviewSettings>,
+        group_assignment: Option<GroupAssignmentSettings>,
+        overrides: Option<AssignmentOverrides>,
     ) -> Result<Self, CanvasError> {
         if name.is_none()
             && points_possible.is_none()
             && due_at.is_none()
             && publish_state.is_none()
+            && peer_reviews.is_none()
+            && group_assignment.is_none()
+            && overrides.is_none()
         {
             return Err(CanvasError::InvalidAssignmentUpdate(
                 "no_fields".to_string(),
@@ -97,6 +219,9 @@ impl AssignmentUpdateInput {
             points_possible,
             due_at,
             publish_state,
+            peer_reviews,
+            group_assignment,
+            overrides,
         })
     }
 }
@@ -120,10 +245,57 @@ struct AssignmentCreateForm {
         skip_serializing_if = "Option::is_none"
     )]
     published: Option<bool>,
+    #[serde(
+        rename = "assignment[peer_reviews]",
+        skip_serializing_if = "Option::is_none"
+    )]
+    peer_reviews: Option<bool>,
+    #[serde(
+        rename = "assignment[automatic_peer_reviews]",
+        skip_serializing_if = "Option::is_none"
+    )]
+    automatic_peer_reviews: Option<bool>,
+    #[serde(
+        rename = "assignment[peer_reviews_assign_at]",
+        skip_serializing_if = "Option::is_none"
+    )]
+    peer_reviews_assign_at: Option<String>,
+    #[serde(
+        rename = "assignment[peer_reviews_due_at]",
+        skip_serializing_if = "Option::is_none"
+    )]
+    peer_reviews_due_at: Option<String>,
+    #[serde(
+        rename = "assignment[group_category_id]",
+        skip_serializing_if = "Option::is_none"
+    )]
+    group_category_id: Option<u64>,
+    #[serde(
+        rename = "assignment[grade_group_students_individually]",
+        skip_serializing_if = "Option::is_none"
+    )]
+    grade_group_students_individually: Option<bool>,
 }
 
 impl AssignmentCreateForm {
     fn from_input(input: &AssignmentCreateInput) -> Self {
+        let (peer_reviews, automatic_peer_reviews, peer_reviews_assign_at, peer_reviews_due_at) =
+            match input.peer_reviews {
+                Some(settings) => (
+                    Some(true),
+                    Some(matches!(settings.mode(), PeerReviewMode::Automatic)),
+                    settings.assign_at().map(|date| date.as_rfc3339()),
+                    settings.due_at().map(|date| date.as_rfc3339()),
+                ),
+                None => (None, None, None, None),
+            };
+        let (group_category_id, grade_group_students_individually) =
+            match input.group_assignment {
+                Some(GroupAssignmentSettings::Group { category_id }) => {
+                    (Some(category_id.get()), Some(false))
+                }
+                _ => (None, None),
+            };
         Self {
             name: input.name.as_str().to_string(),
             points_possible: input.points_possible.map(PointsPossible::value),
@@ -132,6 +304,12 @@ impl AssignmentCreateForm {
                 PublishState::Published => true,
                 PublishState::Unpublished => false,
             }),
+            peer_reviews,
+            automatic_peer_reviews,
+            peer_reviews_assign_at,
+            peer_reviews_due_at,
+            group_category_id,
+            grade_group_students_individually,
         }
     }
 }
@@ -158,10 +336,57 @@ struct AssignmentUpdateForm {
         skip_serializing_if = "Option::is_none"
     )]
     published: Option<bool>,
+    #[serde(
+        rename = "assignment[peer_reviews]",
+        skip_serializing_if = "Option::is_none"
+    )]
+    peer_reviews: Option<bool>,
+    #[serde(
+        rename = "assignment[automatic_peer_reviews]",
+        skip_serializing_if = "Option::is_none"
+    )]
+    automatic_peer_reviews: Option<bool>,
+    #[serde(
+        rename = "assignment[peer_reviews_assign_at]",
+        skip_serializing_if = "Option::is_none"
+    )]
+    peer_reviews_assign_at: Option<String>,
+    #[serde(
+        rename = "assignment[peer_reviews_due_at]",
+        skip_serializing_if = "Option::is_none"
+    )]
+    peer_reviews_due_at: Option<String>,
+    #[serde(
+        rename = "assignment[group_category_id]",
+        skip_serializing_if = "Option::is_none"
+    )]
+    group_category_id: Option<u64>,
+    #[serde(
+        rename = "assignment[grade_group_students_individually]",
+        skip_serializing_if = "Option::is_none"
+    )]
+    grade_group_students_individually: Option<bool>,
 }
 
 impl AssignmentUpdateForm {
     fn from_input(input: &AssignmentUpdateInput) -> Self {
+        let (peer_reviews, automatic_peer_reviews, peer_reviews_assign_at, peer_reviews_due_at) =
+            match input.peer_reviews {
+                Some(settings) => (
+                    Some(true),
+                    Some(matches!(settings.mode(), PeerReviewMode::Automatic)),
+                    settings.assign_at().map(|date| date.as_rfc3339()),
+                    settings.due_at().map(|date| date.as_rfc3339()),
+                ),
+                None => (None, None, None, None),
+            };
+        let (group_category_id, grade_group_students_individually) =
+            match input.group_assignment {
+                Some(GroupAssignmentSettings::Group { category_id }) => {
+                    (Some(category_id.get()), Some(false))
+                }
+                _ => (None, None),
+            };
         Self {
             name: input.name.as_ref().map(|name| name.as_str().to_string()),
             points_possible: input.points_possible.map(PointsPossible::value),
@@ -170,6 +395,12 @@ impl AssignmentUpdateForm {
                 PublishState::Published => true,
                 PublishState::Unpublished => false,
             }),
+            peer_reviews,
+            automatic_peer_reviews,
+            peer_reviews_assign_at,
+            peer_reviews_due_at,
+            group_category_id,
+            grade_group_students_individually,
         }
     }
 }
@@ -233,7 +464,7 @@ pub fn list_assignments(
     let client = CanvasClient::new(config).map_err(CanvasError::Api)?;
     let assignments: Vec<ApiAssignment> = client
         .get_paginated(&format!(
-            "/courses/{}/assignments?per_page=100",
+            "/courses/{}/assignments?per_page=100&include[]=overrides&include[]=post_policy",
             course_id.get()
         ))
         .map_err(CanvasError::Api)?;
@@ -266,6 +497,9 @@ pub fn create_assignment(
     let assignment: ApiAssignment = client
         .post_json(&format!("/courses/{}/assignments", course_id.get()), &form)
         .map_err(CanvasError::Api)?;
+    if let Some(overrides) = input.overrides.as_ref() {
+        apply_assignment_overrides(&client, course_id, assignment.id, overrides)?;
+    }
     Ok(assignment.into_summary())
 }
 
@@ -287,7 +521,88 @@ pub fn update_assignment(
             &form,
         )
         .map_err(CanvasError::Api)?;
+    if let Some(overrides) = input.overrides.as_ref() {
+        apply_assignment_overrides(&client, course_id, assignment_id.get(), overrides)?;
+    }
     Ok(assignment.into_summary())
+}
+
+fn apply_assignment_overrides(
+    client: &CanvasClient,
+    course_id: CourseId,
+    assignment_id: u64,
+    overrides: &AssignmentOverrides,
+) -> Result<(), CanvasError> {
+    for override_entry in overrides.iter() {
+        let form = AssignmentOverrideForm::from_override(override_entry);
+        let _: serde_json::Value = client
+            .post_json(
+                &format!(
+                    "/courses/{}/assignments/{}/overrides",
+                    course_id.get(),
+                    assignment_id
+                ),
+                &form,
+            )
+            .map_err(CanvasError::Api)?;
+    }
+    Ok(())
+}
+
+#[derive(Debug, Serialize)]
+struct AssignmentOverrideForm {
+    #[serde(
+        rename = "assignment_override[course_section_id]",
+        skip_serializing_if = "Option::is_none"
+    )]
+    course_section_id: Option<u64>,
+    #[serde(
+        rename = "assignment_override[student_ids]",
+        skip_serializing_if = "Option::is_none"
+    )]
+    student_ids: Option<Vec<u64>>,
+    #[serde(
+        rename = "assignment_override[due_at]",
+        skip_serializing_if = "Option::is_none"
+    )]
+    due_at: Option<String>,
+    #[serde(
+        rename = "assignment_override[unlock_at]",
+        skip_serializing_if = "Option::is_none"
+    )]
+    unlock_at: Option<String>,
+    #[serde(
+        rename = "assignment_override[lock_at]",
+        skip_serializing_if = "Option::is_none"
+    )]
+    lock_at: Option<String>,
+}
+
+impl AssignmentOverrideForm {
+    fn from_override(override_entry: &AssignmentOverride) -> Self {
+        let (course_section_id, student_ids) = match override_entry.target() {
+            canvas_models::AssignmentOverrideTarget::Section(section_id) => {
+                (Some(section_id.get()), None)
+            }
+            canvas_models::AssignmentOverrideTarget::Students(student_ids) => (
+                None,
+                Some(
+                    student_ids
+                        .iter()
+                        .map(|id| id.get())
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+        };
+        let dates = override_entry.dates();
+        Self {
+            course_section_id,
+            student_ids,
+            due_at: dates.due_at().map(|date| date.as_rfc3339()),
+            unlock_at: dates.unlock_at().map(|date| date.as_rfc3339()),
+            lock_at: dates.lock_at().map(|date| date.as_rfc3339()),
+        }
+    }
 }
 
 pub fn delete_assignment(
@@ -371,11 +686,14 @@ pub fn ensure_assignment_points(
 #[cfg(test)]
 mod tests {
     use super::{AssignmentUpdateInput, AssignmentUpdateForm, SubmissionGradeForm};
-    use canvas_models::{AssignmentName, DueDate, PointsPossible, PublishState, Score};
+    use canvas_models::{
+        AssignmentName, DueDate, PointsPossible, PublishState, Score,
+    };
 
     #[test]
     fn assignment_update_requires_fields() {
-        let update = AssignmentUpdateInput::new(None, None, None, None);
+        let update =
+            AssignmentUpdateInput::new(None, None, None, None, None, None, None);
         assert!(update.is_err());
     }
 
@@ -389,6 +707,9 @@ mod tests {
             Some(points),
             Some(due_at),
             Some(PublishState::Published),
+            None,
+            None,
+            None,
         )
         .expect("update");
         let form = AssignmentUpdateForm::from_input(&update);

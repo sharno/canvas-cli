@@ -14,18 +14,20 @@ mod rubrics;
 mod question_banks;
 
 use canvas_models::{
-    AllDayDate, AssignmentId, AssignmentName, CalendarEventContext,
-    CalendarEventId, CalendarEventTitle, CanvasHost, CanvasToken, CourseDates,
-    CourseId, CourseVisibility, DiscussionId, DueDate, EventDateTime,
-    ExternalToolConfigUrl, ExternalToolId, ExternalToolName, ExternalToolPlacement,
-    FileId, FolderId, FolderName, GradingSchemeId, GroupId, GroupName, MessageBody,
-    MessageSubject, ModuleId, ModuleName, OutcomeDescription, OutcomeGroupId,
-    OutcomeId, OutcomeTitle, PageBody, PageId, PageTitle, PointsPossible,
-    PublishState, QuestionBankId, QuestionBankTitle, QuestionId, QuestionName,
-    QuestionText, QuestionType, QuizAccessCode, QuizAvailability, QuizId,
-    QuizSubmissionId, QuizTimeLimit, QuizTitle, RecipientIds, ReportType,
-    RubricAssessment, RubricAssociationId, RubricId, RubricSelection, RubricTitle,
-    Score, SectionId, SubmissionId, UserId, UserRole,
+    AllDayDate, AssignmentId, AssignmentName, AssignmentOverride, AssignmentOverrideDates,
+    AssignmentOverrideTarget, AssignmentOverrides, CalendarEventContext, CalendarEventId,
+    CalendarEventTitle, CanvasHost, CanvasToken, CourseDates, CourseId, CourseVisibility,
+    DiscussionId, DueDate, EventDateTime, ExternalToolConfigUrl, ExternalToolId,
+    ExternalToolName, ExternalToolPlacement, FileId, FolderId, FolderName,
+    GradingPostingPolicy, GradingSchemeId, GroupAssignmentMode, GroupAssignmentSettings,
+    GroupCategoryId, GroupId, GroupName, MessageBody, MessageSubject, ModuleId,
+    ModuleName, MutedState, OutcomeDescription, OutcomeGroupId, OutcomeId,
+    OutcomeTitle, OverrideStudentIds, PageBody, PageId, PageTitle, PeerReviewMode,
+    PeerReviewSettings, PointsPossible, PublishState, QuestionBankId, QuestionBankTitle,
+    QuestionId, QuestionName, QuestionText, QuestionType, QuizAccessCode,
+    QuizAvailability, QuizId, QuizSubmissionId, QuizTimeLimit, QuizTitle,
+    RecipientIds, ReportType, RubricAssessment, RubricAssociationId, RubricId,
+    RubricSelection, RubricTitle, Score, SectionId, SubmissionId, UserId, UserRole,
 };
 use thiserror::Error;
 
@@ -34,7 +36,8 @@ pub use api::{ApiError, ApiErrorCode, CanvasClient, RetryPolicy};
 pub use assignments::{
     create_assignment, delete_assignment, ensure_assignment_points, get_assignment,
     grade_submission, list_assignments, list_submissions, update_assignment,
-    AssignmentCreateInput, AssignmentSummary, AssignmentUpdateInput, SubmissionSummary,
+    AssignmentCreateInput, AssignmentGroupSummary, AssignmentPeerReviewSummary,
+    AssignmentSummary, AssignmentUpdateInput, SubmissionSummary,
 };
 pub use calendar::{
     create_calendar_event, delete_calendar_event, list_calendar_events,
@@ -95,6 +98,26 @@ pub enum CanvasError {
     InvalidAssignmentId(String),
     #[error("invalid assignment name: {0}")]
     InvalidAssignmentName(String),
+    #[error("invalid group category id: {0}")]
+    InvalidGroupCategoryId(String),
+    #[error("invalid group assignment mode: {0}")]
+    InvalidGroupAssignmentMode(String),
+    #[error("invalid group assignment settings: {0}")]
+    InvalidGroupAssignmentSettings(String),
+    #[error("invalid peer review mode: {0}")]
+    InvalidPeerReviewMode(String),
+    #[error("invalid peer review settings: {0}")]
+    InvalidPeerReviewSettings(String),
+    #[error("invalid assignment overrides: {0}")]
+    InvalidAssignmentOverrides(String),
+    #[error("invalid assignment override target: {0}")]
+    InvalidAssignmentOverrideTarget(String),
+    #[error("invalid assignment override dates: {0}")]
+    InvalidAssignmentOverrideDates(String),
+    #[error("invalid grading posting policy: {0}")]
+    InvalidGradingPostingPolicy(String),
+    #[error("invalid muted state: {0}")]
+    InvalidMutedState(String),
     #[error("invalid outcome id: {0}")]
     InvalidOutcomeId(String),
     #[error("invalid outcome group id: {0}")]
@@ -563,6 +586,184 @@ pub fn parse_due_date(raw: &str) -> Result<DueDate, CanvasError> {
         .map_err(|_| CanvasError::InvalidDueDate(raw.to_string()))
 }
 
+pub fn parse_group_category_id(
+    raw: &str,
+) -> Result<GroupCategoryId, CanvasError> {
+    raw.parse::<GroupCategoryId>()
+        .map_err(|_| CanvasError::InvalidGroupCategoryId(raw.to_string()))
+}
+
+pub fn parse_group_assignment_mode(
+    raw: &str,
+) -> Result<GroupAssignmentMode, CanvasError> {
+    raw.parse::<GroupAssignmentMode>()
+        .map_err(|_| CanvasError::InvalidGroupAssignmentMode(raw.to_string()))
+}
+
+pub fn parse_group_assignment_settings(
+    mode: GroupAssignmentMode,
+    category_id: Option<GroupCategoryId>,
+) -> Result<GroupAssignmentSettings, CanvasError> {
+    GroupAssignmentSettings::new(mode, category_id)
+        .map_err(|_| CanvasError::InvalidGroupAssignmentSettings("invalid".to_string()))
+}
+
+pub fn parse_peer_review_mode(
+    raw: &str,
+) -> Result<PeerReviewMode, CanvasError> {
+    raw.parse::<PeerReviewMode>()
+        .map_err(|_| CanvasError::InvalidPeerReviewMode(raw.to_string()))
+}
+
+pub fn parse_peer_review_settings(
+    mode: PeerReviewMode,
+    assign_at: Option<DueDate>,
+    due_at: Option<DueDate>,
+) -> Result<PeerReviewSettings, CanvasError> {
+    PeerReviewSettings::new(mode, assign_at, due_at)
+        .map_err(|_| CanvasError::InvalidPeerReviewSettings("invalid".to_string()))
+}
+
+pub fn parse_grading_posting_policy(
+    raw: &str,
+) -> Result<GradingPostingPolicy, CanvasError> {
+    raw.parse::<GradingPostingPolicy>()
+        .map_err(|_| CanvasError::InvalidGradingPostingPolicy(raw.to_string()))
+}
+
+pub fn parse_muted_state(raw: &str) -> Result<MutedState, CanvasError> {
+    raw.parse::<MutedState>()
+        .map_err(|_| CanvasError::InvalidMutedState(raw.to_string()))
+}
+
+pub fn parse_assignment_override_dates(
+    unlock_at: Option<DueDate>,
+    due_at: Option<DueDate>,
+    lock_at: Option<DueDate>,
+) -> Result<AssignmentOverrideDates, CanvasError> {
+    AssignmentOverrideDates::new(unlock_at, due_at, lock_at)
+        .map_err(|_| CanvasError::InvalidAssignmentOverrideDates("invalid".to_string()))
+}
+
+pub fn parse_assignment_overrides(
+    raw: &str,
+) -> Result<AssignmentOverrides, CanvasError> {
+    let value: serde_json::Value =
+        serde_json::from_str(raw).map_err(|_| {
+            CanvasError::InvalidAssignmentOverrides("invalid_json".to_string())
+        })?;
+    let entries = value.as_array().ok_or_else(|| {
+        CanvasError::InvalidAssignmentOverrides("expected_array".to_string())
+    })?;
+    let mut overrides = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let object = entry.as_object().ok_or_else(|| {
+            CanvasError::InvalidAssignmentOverrides("expected_object".to_string())
+        })?;
+        let section_id_value = object.get("section_id");
+        let student_ids_value = object.get("student_ids");
+        let target = match (section_id_value, student_ids_value) {
+            (Some(_), Some(_)) => {
+                return Err(CanvasError::InvalidAssignmentOverrideTarget(
+                    "conflicting_target".to_string(),
+                ));
+            }
+            (Some(section_id_value), None) => {
+                let raw = match section_id_value {
+                    serde_json::Value::Number(value) => value.to_string(),
+                    serde_json::Value::String(value) => value.clone(),
+                    _ => {
+                        return Err(CanvasError::InvalidAssignmentOverrideTarget(
+                            "invalid_section_id".to_string(),
+                        ));
+                    }
+                };
+                let section_id = raw.parse::<SectionId>().map_err(|_| {
+                    CanvasError::InvalidAssignmentOverrideTarget(
+                        "invalid_section_id".to_string(),
+                    )
+                })?;
+                AssignmentOverrideTarget::Section(section_id)
+            }
+            (None, Some(student_ids_value)) => {
+                let ids = student_ids_value.as_array().ok_or_else(|| {
+                    CanvasError::InvalidAssignmentOverrideTarget(
+                        "invalid_student_ids".to_string(),
+                    )
+                })?;
+                let mut parsed_ids = Vec::with_capacity(ids.len());
+                for id in ids {
+                    let raw = match id {
+                        serde_json::Value::Number(value) => value.to_string(),
+                        serde_json::Value::String(value) => value.clone(),
+                        _ => {
+                            return Err(
+                                CanvasError::InvalidAssignmentOverrideTarget(
+                                    "invalid_student_ids".to_string(),
+                                ),
+                            );
+                        }
+                    };
+                    let user_id = raw.parse::<UserId>().map_err(|_| {
+                        CanvasError::InvalidAssignmentOverrideTarget(
+                            "invalid_student_ids".to_string(),
+                        )
+                    })?;
+                    parsed_ids.push(user_id);
+                }
+                let parsed_ids = OverrideStudentIds::new(parsed_ids).map_err(|_| {
+                    CanvasError::InvalidAssignmentOverrideTarget(
+                        "invalid_student_ids".to_string(),
+                    )
+                })?;
+                AssignmentOverrideTarget::Students(parsed_ids)
+            }
+            (None, None) => {
+                return Err(CanvasError::InvalidAssignmentOverrideTarget(
+                    "missing_target".to_string(),
+                ));
+            }
+        };
+        let unlock_at = match object.get("unlock_at") {
+            Some(serde_json::Value::String(value)) => {
+                Some(parse_due_date(value)?)
+            }
+            Some(serde_json::Value::Null) | None => None,
+            _ => {
+                return Err(CanvasError::InvalidAssignmentOverrideDates(
+                    "invalid_unlock_at".to_string(),
+                ));
+            }
+        };
+        let due_at = match object.get("due_at") {
+            Some(serde_json::Value::String(value)) => {
+                Some(parse_due_date(value)?)
+            }
+            Some(serde_json::Value::Null) | None => None,
+            _ => {
+                return Err(CanvasError::InvalidAssignmentOverrideDates(
+                    "invalid_due_at".to_string(),
+                ));
+            }
+        };
+        let lock_at = match object.get("lock_at") {
+            Some(serde_json::Value::String(value)) => {
+                Some(parse_due_date(value)?)
+            }
+            Some(serde_json::Value::Null) | None => None,
+            _ => {
+                return Err(CanvasError::InvalidAssignmentOverrideDates(
+                    "invalid_lock_at".to_string(),
+                ));
+            }
+        };
+        let dates = parse_assignment_override_dates(unlock_at, due_at, lock_at)?;
+        overrides.push(AssignmentOverride::new(target, dates));
+    }
+    AssignmentOverrides::new(overrides)
+        .map_err(|_| CanvasError::InvalidAssignmentOverrides("empty".to_string()))
+}
+
 pub fn parse_event_date_time(
     raw: &str,
 ) -> Result<EventDateTime, CanvasError> {
@@ -694,9 +895,10 @@ pub fn parse_token(raw: &str) -> Result<CanvasToken, CanvasError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_course_dates, parse_external_tool_config_json, parse_external_tool_config_url,
-        parse_external_tool_id, parse_external_tool_name, parse_external_tool_placement,
-        parse_host, parse_recipient_ids, parse_rubric_assessment,
+        parse_assignment_overrides, parse_course_dates, parse_external_tool_config_json,
+        parse_external_tool_config_url, parse_external_tool_id, parse_external_tool_name,
+        parse_external_tool_placement, parse_host, parse_recipient_ids,
+        parse_rubric_assessment,
         parse_rubric_association_target, parse_score, parse_token,
     };
     use canvas_models::{AssignmentId, DueDate, OutcomeId};
@@ -752,6 +954,20 @@ mod tests {
         let parsed = parse_rubric_association_target(Some(assignment), None);
         assert!(parsed.is_ok());
         let parsed = parse_rubric_association_target(Some(assignment), Some(outcome));
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn parse_assignment_overrides_accepts_section() {
+        let raw = r#"[{"section_id":1,"due_at":"2025-01-01T00:00:00Z"}]"#;
+        let parsed = parse_assignment_overrides(raw);
+        assert!(parsed.is_ok());
+    }
+
+    #[test]
+    fn parse_assignment_overrides_rejects_conflicting_targets() {
+        let raw = r#"[{"section_id":1,"student_ids":[2]}]"#;
+        let parsed = parse_assignment_overrides(raw);
         assert!(parsed.is_err());
     }
 

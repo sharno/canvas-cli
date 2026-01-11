@@ -6,6 +6,18 @@ use time::format_description::{self, well_known::Rfc3339};
 use time::{Date, OffsetDateTime};
 use url::Url;
 
+mod assignment_advanced;
+pub use assignment_advanced::{
+    AssignmentOverride, AssignmentOverrideDates, AssignmentOverrideDatesError,
+    AssignmentOverrideTarget, AssignmentOverrides, AssignmentOverridesError,
+    GradingPostingPolicy, GradingPostingPolicyParseError, GroupAssignmentMode,
+    GroupAssignmentModeParseError, GroupAssignmentSettings,
+    GroupAssignmentSettingsError, GroupCategoryId, GroupCategoryIdParseError,
+    MutedState, MutedStateParseError, OverrideStudentIds, OverrideStudentIdsError,
+    PeerReviewMode, PeerReviewModeParseError, PeerReviewSettings,
+    PeerReviewSettingsError,
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CourseId(u64);
 

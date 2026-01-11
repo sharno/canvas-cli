@@ -17,7 +17,7 @@ use serde_json::{json, Value};
 use thiserror::Error;
 use tracing::info;
 
-const SCHEMA_VERSION: &str = "v3";
+const SCHEMA_VERSION: &str = "v4";
 
 #[derive(Debug, Parser)]
 #[command(
@@ -271,6 +271,27 @@ enum AssignmentCommand {
         /// Publish state (published, unpublished)
         #[arg(long = "publish-state")]
         publish_state: Option<String>,
+        /// Peer review mode (automatic, manual)
+        #[arg(long = "peer-review-mode")]
+        peer_review_mode: Option<String>,
+        /// Peer review assign date (RFC3339)
+        #[arg(long = "peer-review-assign-at")]
+        peer_review_assign_at: Option<String>,
+        /// Peer review due date (RFC3339)
+        #[arg(long = "peer-review-due-at")]
+        peer_review_due_at: Option<String>,
+        /// Group assignment mode (group, individual)
+        #[arg(long = "group-assignment-mode")]
+        group_assignment_mode: Option<String>,
+        /// Group category id (required for group assignments)
+        #[arg(long = "group-category-id")]
+        group_category_id: Option<String>,
+        /// Assignment overrides JSON (array)
+        #[arg(long = "overrides-json")]
+        overrides_json: Option<String>,
+        /// Assignment overrides JSON file
+        #[arg(long = "overrides-file")]
+        overrides_file: Option<PathBuf>,
     },
     /// Update an assignment
     Update {
@@ -292,6 +313,27 @@ enum AssignmentCommand {
         /// Publish state (published, unpublished)
         #[arg(long = "publish-state")]
         publish_state: Option<String>,
+        /// Peer review mode (automatic, manual)
+        #[arg(long = "peer-review-mode")]
+        peer_review_mode: Option<String>,
+        /// Peer review assign date (RFC3339)
+        #[arg(long = "peer-review-assign-at")]
+        peer_review_assign_at: Option<String>,
+        /// Peer review due date (RFC3339)
+        #[arg(long = "peer-review-due-at")]
+        peer_review_due_at: Option<String>,
+        /// Group assignment mode (group, individual)
+        #[arg(long = "group-assignment-mode")]
+        group_assignment_mode: Option<String>,
+        /// Group category id (required for group assignments)
+        #[arg(long = "group-category-id")]
+        group_category_id: Option<String>,
+        /// Assignment overrides JSON (array)
+        #[arg(long = "overrides-json")]
+        overrides_json: Option<String>,
+        /// Assignment overrides JSON file
+        #[arg(long = "overrides-file")]
+        overrides_file: Option<PathBuf>,
     },
     /// Delete an assignment
     Delete {
@@ -4601,6 +4643,76 @@ fn parse_rubric_criteria_input(
     Ok(Some(parsed))
 }
 
+fn parse_assignment_overrides_input(
+    overrides_json: Option<String>,
+    overrides_file: Option<PathBuf>,
+) -> Result<Option<canvas_models::AssignmentOverrides>, CliError> {
+    if overrides_json.is_some() && overrides_file.is_some() {
+        return Err(CliError::Canvas(
+            canvas_core::CanvasError::InvalidAssignmentOverrides(
+                "multiple_sources".to_string(),
+            ),
+        ));
+    }
+    let raw = if let Some(raw) = overrides_json {
+        raw
+    } else if let Some(path) = overrides_file {
+        read_file_to_string(&path)?
+    } else {
+        return Ok(None);
+    };
+    let parsed = canvas_core::parse_assignment_overrides(&raw)?;
+    Ok(Some(parsed))
+}
+
+fn parse_peer_review_settings_input(
+    mode: Option<String>,
+    assign_at: Option<String>,
+    due_at: Option<String>,
+) -> Result<Option<canvas_models::PeerReviewSettings>, CliError> {
+    if mode.is_none() && assign_at.is_none() && due_at.is_none() {
+        return Ok(None);
+    }
+    let mode = mode.ok_or_else(|| {
+        CliError::Canvas(canvas_core::CanvasError::InvalidPeerReviewSettings(
+            "missing_mode".to_string(),
+        ))
+    })?;
+    let mode = canvas_core::parse_peer_review_mode(&mode)?;
+    let assign_at = match assign_at {
+        Some(raw) => Some(canvas_core::parse_due_date(&raw)?),
+        None => None,
+    };
+    let due_at = match due_at {
+        Some(raw) => Some(canvas_core::parse_due_date(&raw)?),
+        None => None,
+    };
+    let parsed =
+        canvas_core::parse_peer_review_settings(mode, assign_at, due_at)?;
+    Ok(Some(parsed))
+}
+
+fn parse_group_assignment_settings_input(
+    mode: Option<String>,
+    category_id: Option<String>,
+) -> Result<Option<canvas_models::GroupAssignmentSettings>, CliError> {
+    if mode.is_none() && category_id.is_none() {
+        return Ok(None);
+    }
+    let mode = mode.ok_or_else(|| {
+        CliError::Canvas(canvas_core::CanvasError::InvalidGroupAssignmentSettings(
+            "missing_mode".to_string(),
+        ))
+    })?;
+    let mode = canvas_core::parse_group_assignment_mode(&mode)?;
+    let category_id = match category_id {
+        Some(raw) => Some(canvas_core::parse_group_category_id(&raw)?),
+        None => None,
+    };
+    let parsed = canvas_core::parse_group_assignment_settings(mode, category_id)?;
+    Ok(Some(parsed))
+}
+
 fn parse_external_tool_config_input(
     config_url: Option<String>,
     config_json: Option<String>,
@@ -4814,6 +4926,25 @@ fn assignment_summary_json(assignment: &canvas_core::AssignmentSummary) -> Value
         "due_at": assignment.due_at,
         "published": assignment.published,
         "workflow_state": assignment.workflow_state,
+        "override_count": assignment.override_count,
+        "peer_reviews": assignment.peer_reviews.as_ref().map(|settings| {
+            json!({
+                "mode": settings.mode.as_str(),
+                "assign_at": settings.assign_at,
+                "due_at": settings.due_at,
+            })
+        }),
+        "group_settings": assignment.group_assignment.as_ref().map(|settings| {
+            json!({
+                "mode": settings.mode.as_str(),
+                "category_id": settings.category_id,
+                "grade_individually": settings.grade_individually,
+            })
+        }),
+        "grading_posting_policy": assignment
+            .grading_posting_policy
+            .map(|policy| policy.as_str()),
+        "muted_state": assignment.muted.map(|state| state.as_str()),
     })
 }
 
@@ -5780,6 +5911,36 @@ fn error_code(error: &CliError) -> &'static str {
             canvas_core::CanvasError::InvalidAssignmentName(_) => {
                 "invalid_assignment_name"
             }
+            canvas_core::CanvasError::InvalidGroupCategoryId(_) => {
+                "invalid_group_category_id"
+            }
+            canvas_core::CanvasError::InvalidGroupAssignmentMode(_) => {
+                "invalid_group_assignment_mode"
+            }
+            canvas_core::CanvasError::InvalidGroupAssignmentSettings(_) => {
+                "invalid_group_assignment_settings"
+            }
+            canvas_core::CanvasError::InvalidPeerReviewMode(_) => {
+                "invalid_peer_review_mode"
+            }
+            canvas_core::CanvasError::InvalidPeerReviewSettings(_) => {
+                "invalid_peer_review_settings"
+            }
+            canvas_core::CanvasError::InvalidAssignmentOverrides(_) => {
+                "invalid_assignment_overrides"
+            }
+            canvas_core::CanvasError::InvalidAssignmentOverrideTarget(_) => {
+                "invalid_assignment_override_target"
+            }
+            canvas_core::CanvasError::InvalidAssignmentOverrideDates(_) => {
+                "invalid_assignment_override_dates"
+            }
+            canvas_core::CanvasError::InvalidGradingPostingPolicy(_) => {
+                "invalid_grading_posting_policy"
+            }
+            canvas_core::CanvasError::InvalidMutedState(_) => {
+                "invalid_muted_state"
+            }
             canvas_core::CanvasError::InvalidOutcomeId(_) => "invalid_outcome_id",
             canvas_core::CanvasError::InvalidOutcomeGroupId(_) => {
                 "invalid_outcome_group_id"
@@ -5944,6 +6105,36 @@ fn error_details(error: &CliError) -> Value {
             canvas_core::CanvasError::InvalidCourseId(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidAssignmentId(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidAssignmentName(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidGroupCategoryId(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidGroupAssignmentMode(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidGroupAssignmentSettings(detail) => {
+                json!({ "detail": detail })
+            }
+            canvas_core::CanvasError::InvalidPeerReviewMode(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidPeerReviewSettings(detail) => {
+                json!({ "detail": detail })
+            }
+            canvas_core::CanvasError::InvalidAssignmentOverrides(detail) => {
+                json!({ "detail": detail })
+            }
+            canvas_core::CanvasError::InvalidAssignmentOverrideTarget(detail) => {
+                json!({ "detail": detail })
+            }
+            canvas_core::CanvasError::InvalidAssignmentOverrideDates(detail) => {
+                json!({ "detail": detail })
+            }
+            canvas_core::CanvasError::InvalidGradingPostingPolicy(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidMutedState(raw) => {
                 json!({ "input": raw })
             }
             canvas_core::CanvasError::InvalidOutcomeId(raw) => json!({ "input": raw }),
@@ -6247,6 +6438,13 @@ impl TryFrom<(AssignmentCommand, &GlobalOptions)> for AssignmentRequest {
                 points,
                 due_at,
                 publish_state,
+                peer_review_mode,
+                peer_review_assign_at,
+                peer_review_due_at,
+                group_assignment_mode,
+                group_category_id,
+                overrides_json,
+                overrides_file,
             } => {
                 let course_id = match course {
                     Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
@@ -6266,11 +6464,27 @@ impl TryFrom<(AssignmentCommand, &GlobalOptions)> for AssignmentRequest {
                     Some(raw) => Some(canvas_core::parse_publish_state(&raw)?),
                     None => None,
                 };
+                let peer_reviews = parse_peer_review_settings_input(
+                    peer_review_mode,
+                    peer_review_assign_at,
+                    peer_review_due_at,
+                )?;
+                let group_assignment = parse_group_assignment_settings_input(
+                    group_assignment_mode,
+                    group_category_id,
+                )?;
+                let overrides = parse_assignment_overrides_input(
+                    overrides_json,
+                    overrides_file,
+                )?;
                 let input = canvas_core::AssignmentCreateInput::new(
                     name,
                     points,
                     due_at,
                     publish_state,
+                    peer_reviews,
+                    group_assignment,
+                    overrides,
                 );
                 Ok(AssignmentRequest::Create(AssignmentCreateRequest {
                     course_id,
@@ -6284,6 +6498,13 @@ impl TryFrom<(AssignmentCommand, &GlobalOptions)> for AssignmentRequest {
                 points,
                 due_at,
                 publish_state,
+                peer_review_mode,
+                peer_review_assign_at,
+                peer_review_due_at,
+                group_assignment_mode,
+                group_category_id,
+                overrides_json,
+                overrides_file,
             } => {
                 let course_id = match course {
                     Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
@@ -6307,11 +6528,27 @@ impl TryFrom<(AssignmentCommand, &GlobalOptions)> for AssignmentRequest {
                     Some(raw) => Some(canvas_core::parse_publish_state(&raw)?),
                     None => None,
                 };
+                let peer_reviews = parse_peer_review_settings_input(
+                    peer_review_mode,
+                    peer_review_assign_at,
+                    peer_review_due_at,
+                )?;
+                let group_assignment = parse_group_assignment_settings_input(
+                    group_assignment_mode,
+                    group_category_id,
+                )?;
+                let overrides = parse_assignment_overrides_input(
+                    overrides_json,
+                    overrides_file,
+                )?;
                 let input = canvas_core::AssignmentUpdateInput::new(
                     name,
                     points,
                     due_at,
                     publish_state,
+                    peer_reviews,
+                    group_assignment,
+                    overrides,
                 )?;
                 Ok(AssignmentRequest::Update(AssignmentUpdateRequest {
                     course_id,

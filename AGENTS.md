@@ -21,3 +21,5 @@
 - Rubrics: criteria input is a non-empty JSON array; attach/detach uses `/courses/:course_id/rubric_associations` and requires `--confirm`.
 - External tools: config accepts URL or XML/JSON (file autodetects .json/.xml); placements accept repeatable `--placement` plus optional placements JSON settings object.
 - Question banks/questions live in `canvas-core/src/question_banks/`; CLI supports JSON input via `--bank-json`/`--bank-file` and `--question-json`/`--question-file`, with `QuestionType` validation at parse time.
+- Assignment overrides input: `--overrides-json`/`--overrides-file` accepts array objects with `section_id` or `student_ids` plus optional `unlock_at`/`due_at`/`lock_at`, parsed via `parse_assignment_overrides`.
+- Assignment list includes `include[]=overrides&include[]=post_policy` for override counts and grading posting policy; bump schema version when assignment summary keys change.
