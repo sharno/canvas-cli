@@ -15,3 +15,4 @@
 - Report exports use `ReportType` + `/courses/:course_id/reports/:report_type`, poll with `wait_for_report`, and stream downloads via `download_report_to_writer` to avoid large in-memory buffers.
 - Keep `canvas --schema` outputs in sync with JSON response keys, and bump `schema_version` when shapes change.
 - Snapshot tests live in `canvas-cli/tests/snapshots`; regenerate with `cargo run -p canvas-cli -- --schema` and `cargo run -p canvas-cli -- --help`.
+- Quizzes: validate availability windows via `parse_quiz_availability`, grade submissions against quiz `points_possible`, and require `--confirm` for publish.

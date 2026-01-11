@@ -1,6 +1,6 @@
 Canvas CLI
 
-Usage: canvas [OPTIONS] [COMMAND]
+Usage: canvas-cli.exe [OPTIONS] [COMMAND]
 
 Commands:
   auth          Authenticate with Canvas
@@ -8,6 +8,7 @@ Commands:
   course        Course-related operations
   assignment    Assignment-related operations
   submission    Submission-related operations
+  quiz          Quiz-related operations
   page          Page-related operations
   module        Module-related operations
   file          File-related operations
@@ -22,29 +23,14 @@ Commands:
   help          Print this message or the help of the given subcommand(s)
 
 Options:
-      --course <COURSE>
-          Default course id for course-related commands
-
-      --json
-          Emit machine-readable JSON output
-
-      --quiet
-          Suppress human-readable output
-
-      --confirm
-          Confirm execution of destructive actions
-
-      --explain
-          Describe planned actions without executing
-
-      --schema
-          Emit JSON schema for CLI outputs
-
-  -h, --help
-          Print help
-
-  -V, --version
-          Print version
+      --course <COURSE>  Default course id for course-related commands
+      --json             Emit machine-readable JSON output
+      --quiet            Suppress human-readable output
+      --confirm          Confirm execution of destructive actions
+      --explain          Describe planned actions without executing
+      --schema           Emit JSON schema for CLI outputs
+  -h, --help             Print help
+  -V, --version          Print version
 
 Examples:
   canvas auth check

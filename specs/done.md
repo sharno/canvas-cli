@@ -10,3 +10,6 @@
 - C:/Users/sharno/projects/canvas-cli/specs/0009-people-communication.md
 - C:/Users/sharno/projects/canvas-cli/specs/0010-analytics-reports.md
 - C:/Users/sharno/projects/canvas-cli/specs/0011-llm-output-schemas.md
+- C:/Users/sharno/projects/canvas-cli/specs/0011-llm-output-schemas.md
+- C:/Users/sharno/projects/canvas-cli/specs/0012-testing-strategy.md
+- C:/Users/sharno/projects/canvas-cli/specs/0013-quizzes.md

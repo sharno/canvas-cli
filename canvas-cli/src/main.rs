@@ -6,7 +6,8 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 
 use canvas_models::{
-    AssignmentId, CourseId, FileId, FolderId, ModuleId, PageId, ReportType, UserId,
+    AssignmentId, CourseId, FileId, FolderId, ModuleId, PageId, QuizId,
+    QuizSubmissionId, ReportType, UserId,
 };
 use clap::{Args, Parser, Subcommand};
 use csv::ReaderBuilder;
@@ -83,6 +84,12 @@ enum Command {
     Submission {
         #[command(subcommand)]
         command: SubmissionCommand,
+    },
+    /// Quiz-related operations
+    #[command(after_help = "Examples:\n  canvas quiz list --course 42\n  canvas quiz create --course 42 --title \"Quiz 1\" --points 10 --due-at 2025-01-10T00:00:00Z\n  canvas quiz update --course 42 --quiz 7 --title \"Quiz 1\" --time-limit 30\n  canvas quiz publish --course 42 --quiz 7 --publish-state published --confirm\n  canvas quiz submission list --course 42 --quiz 7\n  canvas quiz submission grade --course 42 --quiz 7 --submission 9 --score 8 --confirm")]
+    Quiz {
+        #[command(subcommand)]
+        command: QuizCommand,
     },
     /// Page-related operations
     #[command(after_help = "Examples:\n  canvas page list --course 42\n  canvas page create --course 42 --title \"Week 1\" --body \"Welcome\" --publish-state published\n  canvas page update --course 42 --page \"week-1\" --body \"Updated\" --publish-state unpublished\n  canvas page publish --course 42 --page \"week-1\" --publish-state published")]
@@ -304,6 +311,133 @@ enum SubmissionCommand {
         /// File path to import
         #[arg(long)]
         file: PathBuf,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum QuizCommand {
+    /// List quizzes for a course
+    List {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+    },
+    /// Create a quiz
+    Create {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Quiz title
+        #[arg(long)]
+        title: String,
+        /// Quiz points possible
+        #[arg(long)]
+        points: Option<String>,
+        /// Quiz time limit in minutes
+        #[arg(long = "time-limit")]
+        time_limit: Option<String>,
+        /// Quiz access code
+        #[arg(long = "access-code")]
+        access_code: Option<String>,
+        /// Quiz unlock date (RFC3339)
+        #[arg(long = "unlock-at")]
+        unlock_at: Option<String>,
+        /// Quiz due date (RFC3339)
+        #[arg(long = "due-at")]
+        due_at: Option<String>,
+        /// Quiz lock date (RFC3339)
+        #[arg(long = "lock-at")]
+        lock_at: Option<String>,
+        /// Publish state (published, unpublished)
+        #[arg(long = "publish-state")]
+        publish_state: Option<String>,
+    },
+    /// Update a quiz
+    Update {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Quiz id
+        #[arg(long)]
+        quiz: String,
+        /// Quiz title
+        #[arg(long)]
+        title: Option<String>,
+        /// Quiz points possible
+        #[arg(long)]
+        points: Option<String>,
+        /// Quiz time limit in minutes
+        #[arg(long = "time-limit")]
+        time_limit: Option<String>,
+        /// Quiz access code
+        #[arg(long = "access-code")]
+        access_code: Option<String>,
+        /// Quiz unlock date (RFC3339)
+        #[arg(long = "unlock-at")]
+        unlock_at: Option<String>,
+        /// Quiz due date (RFC3339)
+        #[arg(long = "due-at")]
+        due_at: Option<String>,
+        /// Quiz lock date (RFC3339)
+        #[arg(long = "lock-at")]
+        lock_at: Option<String>,
+        /// Publish state (published, unpublished)
+        #[arg(long = "publish-state")]
+        publish_state: Option<String>,
+    },
+    /// Delete a quiz
+    Delete {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Quiz id
+        #[arg(long)]
+        quiz: String,
+    },
+    /// Publish or unpublish a quiz
+    Publish {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Quiz id
+        #[arg(long)]
+        quiz: String,
+        /// Publish state (published, unpublished)
+        #[arg(long = "publish-state")]
+        publish_state: String,
+    },
+    /// Quiz submission operations
+    Submission {
+        #[command(subcommand)]
+        command: QuizSubmissionCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum QuizSubmissionCommand {
+    /// List quiz submissions
+    List {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Quiz id
+        #[arg(long)]
+        quiz: String,
+    },
+    /// Grade a quiz submission
+    Grade {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Quiz id
+        #[arg(long)]
+        quiz: String,
+        /// Quiz submission id
+        #[arg(long = "submission")]
+        submission: String,
+        /// Score to apply
+        #[arg(long)]
+        score: String,
     },
 }
 
@@ -708,6 +842,67 @@ enum SubmissionRequest {
 }
 
 #[derive(Debug)]
+struct QuizListRequest {
+    course_id: CourseId,
+}
+
+#[derive(Debug)]
+struct QuizCreateRequest {
+    course_id: CourseId,
+    input: canvas_core::QuizCreateInput,
+}
+
+#[derive(Debug)]
+struct QuizUpdateRequest {
+    course_id: CourseId,
+    quiz_id: QuizId,
+    input: canvas_core::QuizUpdateInput,
+}
+
+#[derive(Debug)]
+struct QuizDeleteRequest {
+    course_id: CourseId,
+    quiz_id: QuizId,
+}
+
+#[derive(Debug)]
+struct QuizPublishRequest {
+    course_id: CourseId,
+    quiz_id: QuizId,
+    publish_state: canvas_models::PublishState,
+}
+
+#[derive(Debug)]
+enum QuizRequest {
+    List(QuizListRequest),
+    Create(QuizCreateRequest),
+    Update(QuizUpdateRequest),
+    Delete(QuizDeleteRequest),
+    Publish(QuizPublishRequest),
+    Submission(QuizSubmissionRequest),
+}
+
+#[derive(Debug)]
+struct QuizSubmissionListRequest {
+    course_id: CourseId,
+    quiz_id: QuizId,
+}
+
+#[derive(Debug)]
+struct QuizSubmissionGradeRequest {
+    course_id: CourseId,
+    quiz_id: QuizId,
+    submission_id: QuizSubmissionId,
+    score: String,
+}
+
+#[derive(Debug)]
+enum QuizSubmissionRequest {
+    List(QuizSubmissionListRequest),
+    Grade(QuizSubmissionGradeRequest),
+}
+
+#[derive(Debug)]
 struct PageListRequest {
     course_id: CourseId,
 }
@@ -1007,6 +1202,10 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Command::Submission { command } => {
             let request = SubmissionRequest::try_from((command, &global))?;
             handle_submission(request, &global)
+        }
+        Command::Quiz { command } => {
+            let request = QuizRequest::try_from((command, &global))?;
+            handle_quiz(request, &global)
         }
         Command::Page { command } => {
             let request = PageRequest::try_from((command, &global))?;
@@ -1509,6 +1708,251 @@ fn handle_submission(
                 println!(
                     "Imported grades: {} succeeded, {} failed.",
                     success, failed
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn handle_quiz(
+    request: QuizRequest,
+    global: &GlobalOptions,
+) -> Result<(), CliError> {
+    match request {
+        QuizRequest::List(request) => {
+            let planned = vec![PlannedAction {
+                action: "list quizzes",
+                risk: "none",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("quiz list", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let quizzes =
+                canvas_core::list_quizzes(&config, request.course_id)?;
+            emit_result(
+                "quiz list",
+                json!({
+                    "status": "ok",
+                    "course_id": request.course_id.get(),
+                    "quizzes": quizzes.iter().map(quiz_summary_json).collect::<Vec<_>>(),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Found {} quizzes.", quizzes.len());
+            }
+        }
+        QuizRequest::Create(request) => {
+            let planned = vec![PlannedAction {
+                action: "create quiz",
+                risk: "creates remote quiz",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("quiz create", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let quiz =
+                canvas_core::create_quiz(&config, request.course_id, &request.input)?;
+            emit_result(
+                "quiz create",
+                json!({
+                    "status": "created",
+                    "course_id": request.course_id.get(),
+                    "quiz": quiz_summary_json(&quiz),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Quiz {} created.", quiz.id);
+            }
+        }
+        QuizRequest::Update(request) => {
+            let planned = vec![PlannedAction {
+                action: "update quiz",
+                risk: "updates remote quiz",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("quiz update", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let quiz = canvas_core::update_quiz(
+                &config,
+                request.course_id,
+                request.quiz_id,
+                &request.input,
+            )?;
+            emit_result(
+                "quiz update",
+                json!({
+                    "status": "updated",
+                    "course_id": request.course_id.get(),
+                    "quiz": quiz_summary_json(&quiz),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Quiz {} updated.", quiz.id);
+            }
+        }
+        QuizRequest::Delete(request) => {
+            let planned = vec![PlannedAction {
+                action: "delete quiz",
+                risk: "deletes remote quiz",
+                requires_confirmation: true,
+            }];
+            if global.explain {
+                emit_plan("quiz delete", &planned, global);
+                return Ok(());
+            }
+            require_confirmation(global, "quiz delete")?;
+            let config = canvas_core::load_merged_config()?;
+            let quiz = canvas_core::delete_quiz(
+                &config,
+                request.course_id,
+                request.quiz_id,
+            )?;
+            emit_result(
+                "quiz delete",
+                json!({
+                    "status": "deleted",
+                    "course_id": request.course_id.get(),
+                    "quiz": quiz_summary_json(&quiz),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Quiz {} deleted.", quiz.id);
+            }
+        }
+        QuizRequest::Publish(request) => {
+            let planned = vec![PlannedAction {
+                action: "publish quiz",
+                risk: "updates remote quiz publish state",
+                requires_confirmation: true,
+            }];
+            if global.explain {
+                emit_plan("quiz publish", &planned, global);
+                return Ok(());
+            }
+            require_confirmation(global, "quiz publish")?;
+            let config = canvas_core::load_merged_config()?;
+            let input = canvas_core::QuizUpdateInput::new(
+                None,
+                None,
+                Some(request.publish_state),
+                None,
+                None,
+                None,
+            )?;
+            let quiz = canvas_core::update_quiz(
+                &config,
+                request.course_id,
+                request.quiz_id,
+                &input,
+            )?;
+            emit_result(
+                "quiz publish",
+                json!({
+                    "status": request.publish_state.as_str(),
+                    "course_id": request.course_id.get(),
+                    "quiz": quiz_summary_json(&quiz),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Quiz {} {}.", quiz.id, request.publish_state.as_str());
+            }
+        }
+        QuizRequest::Submission(request) => handle_quiz_submission(request, global)?,
+    }
+    Ok(())
+}
+
+fn handle_quiz_submission(
+    request: QuizSubmissionRequest,
+    global: &GlobalOptions,
+) -> Result<(), CliError> {
+    match request {
+        QuizSubmissionRequest::List(request) => {
+            let planned = vec![PlannedAction {
+                action: "list quiz submissions",
+                risk: "none",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("quiz submission list", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let submissions = canvas_core::list_quiz_submissions(
+                &config,
+                request.course_id,
+                request.quiz_id,
+            )?;
+            emit_result(
+                "quiz submission list",
+                json!({
+                    "status": "ok",
+                    "course_id": request.course_id.get(),
+                    "quiz_id": request.quiz_id.get(),
+                    "submissions": submissions
+                        .iter()
+                        .map(quiz_submission_summary_json)
+                        .collect::<Vec<_>>(),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Found {} quiz submissions.", submissions.len());
+            }
+        }
+        QuizSubmissionRequest::Grade(request) => {
+            let planned = vec![PlannedAction {
+                action: "grade quiz submission",
+                risk: "updates remote quiz submission grade",
+                requires_confirmation: true,
+            }];
+            if global.explain {
+                emit_plan("quiz submission grade", &planned, global);
+                return Ok(());
+            }
+            require_confirmation(global, "quiz submission grade")?;
+            let config = canvas_core::load_merged_config()?;
+            let quiz =
+                canvas_core::get_quiz(&config, request.course_id, request.quiz_id)?;
+            let max_points =
+                canvas_core::ensure_quiz_points(request.quiz_id, quiz.points_possible)?;
+            let score = canvas_core::parse_score(&request.score, max_points)?;
+            let submission = canvas_core::grade_quiz_submission(
+                &config,
+                request.course_id,
+                request.quiz_id,
+                request.submission_id,
+                score,
+            )?;
+            emit_result(
+                "quiz submission grade",
+                json!({
+                    "status": "graded",
+                    "course_id": request.course_id.get(),
+                    "quiz_id": request.quiz_id.get(),
+                    "submission_id": request.submission_id.get(),
+                    "submission": quiz_submission_summary_json(&submission),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!(
+                    "Quiz submission {} graded.",
+                    request.submission_id.get()
                 );
             }
         }
@@ -2511,6 +2955,33 @@ fn submission_summary_json(submission: &canvas_core::SubmissionSummary) -> Value
     })
 }
 
+fn quiz_summary_json(quiz: &canvas_core::QuizSummary) -> Value {
+    json!({
+        "id": quiz.id,
+        "title": quiz.title,
+        "points_possible": quiz.points_possible,
+        "due_at": quiz.due_at,
+        "published": quiz.published,
+        "workflow_state": quiz.workflow_state,
+        "time_limit": quiz.time_limit,
+        "access_code": quiz.access_code,
+        "unlock_at": quiz.unlock_at,
+        "lock_at": quiz.lock_at,
+    })
+}
+
+fn quiz_submission_summary_json(
+    submission: &canvas_core::QuizSubmissionSummary,
+) -> Value {
+    json!({
+        "id": submission.id,
+        "user_id": submission.user_id,
+        "score": submission.score,
+        "submitted_at": submission.submitted_at,
+        "workflow_state": submission.workflow_state,
+    })
+}
+
 fn page_summary_json(page: &canvas_core::PageSummary) -> Value {
     json!({
         "page_id": page.page_id,
@@ -2898,6 +3369,46 @@ fn schema_definition() -> Value {
                 },
                 "required": ["ok", "schema_version", "command", "data"],
             },
+            "quiz_list": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "quiz_mutation": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "quiz_submission_list": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "quiz_submission_grade": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
             "page_list": {
                 "type": "object",
                 "properties": {
@@ -3146,6 +3657,11 @@ fn error_code(error: &CliError) -> &'static str {
             canvas_core::CanvasError::InvalidAssignmentName(_) => {
                 "invalid_assignment_name"
             }
+            canvas_core::CanvasError::InvalidQuizId(_) => "invalid_quiz_id",
+            canvas_core::CanvasError::InvalidQuizSubmissionId(_) => {
+                "invalid_quiz_submission_id"
+            }
+            canvas_core::CanvasError::InvalidQuizTitle(_) => "invalid_quiz_title",
             canvas_core::CanvasError::InvalidUserId(_) => "invalid_user_id",
             canvas_core::CanvasError::InvalidSubmissionId(_) => "invalid_submission_id",
             canvas_core::CanvasError::InvalidPageId(_) => "invalid_page_id",
@@ -3168,6 +3684,12 @@ fn error_code(error: &CliError) -> &'static str {
             canvas_core::CanvasError::InvalidScore(_) => "invalid_score",
             canvas_core::CanvasError::InvalidPointsPossible(_) => "invalid_points_possible",
             canvas_core::CanvasError::InvalidDueDate(_) => "invalid_due_date",
+            canvas_core::CanvasError::InvalidQuizTimeLimit(_) => {
+                "invalid_quiz_time_limit"
+            }
+            canvas_core::CanvasError::InvalidQuizAccessCode(_) => {
+                "invalid_quiz_access_code"
+            }
             canvas_core::CanvasError::InvalidPublishState(_) => "invalid_publish_state",
             canvas_core::CanvasError::InvalidRubricSelection(_) => "invalid_rubric_selection",
             canvas_core::CanvasError::InvalidRubricAssessment(_) => {
@@ -3181,11 +3703,16 @@ fn error_code(error: &CliError) -> &'static str {
             canvas_core::CanvasError::InvalidAssignmentUpdate(_) => {
                 "invalid_assignment_update"
             }
+            canvas_core::CanvasError::InvalidQuizUpdate(_) => "invalid_quiz_update",
             canvas_core::CanvasError::InvalidPageUpdate(_) => "invalid_page_update",
             canvas_core::CanvasError::InvalidModuleUpdate(_) => "invalid_module_update",
             canvas_core::CanvasError::InvalidModuleReorder(_) => "invalid_module_reorder",
             canvas_core::CanvasError::MissingAssignmentPoints(_) => {
                 "missing_assignment_points"
+            }
+            canvas_core::CanvasError::MissingQuizPoints(_) => "missing_quiz_points",
+            canvas_core::CanvasError::InvalidQuizAvailability(_) => {
+                "invalid_quiz_availability"
             }
             canvas_core::CanvasError::InvalidFileUpload(_) => "invalid_file_upload",
             canvas_core::CanvasError::ReportNotReady(_) => "report_not_ready",
@@ -3219,6 +3746,11 @@ fn error_details(error: &CliError) -> Value {
             canvas_core::CanvasError::InvalidAssignmentName(raw) => {
                 json!({ "input": raw })
             }
+            canvas_core::CanvasError::InvalidQuizId(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidQuizSubmissionId(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidQuizTitle(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidUserId(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidSubmissionId(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidPageId(raw) => json!({ "input": raw }),
@@ -3245,6 +3777,12 @@ fn error_details(error: &CliError) -> Value {
                 json!({ "input": raw })
             }
             canvas_core::CanvasError::InvalidDueDate(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidQuizTimeLimit(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidQuizAccessCode(raw) => {
+                json!({ "input": raw })
+            }
             canvas_core::CanvasError::InvalidPublishState(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidRubricSelection(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidRubricAssessment(raw) => {
@@ -3258,6 +3796,9 @@ fn error_details(error: &CliError) -> Value {
             canvas_core::CanvasError::InvalidAssignmentUpdate(detail) => {
                 json!({ "detail": detail })
             }
+            canvas_core::CanvasError::InvalidQuizUpdate(detail) => {
+                json!({ "detail": detail })
+            }
             canvas_core::CanvasError::InvalidPageUpdate(detail) => {
                 json!({ "detail": detail })
             }
@@ -3269,6 +3810,12 @@ fn error_details(error: &CliError) -> Value {
             }
             canvas_core::CanvasError::MissingAssignmentPoints(assignment_id) => {
                 json!({ "assignment_id": assignment_id })
+            }
+            canvas_core::CanvasError::MissingQuizPoints(quiz_id) => {
+                json!({ "quiz_id": quiz_id })
+            }
+            canvas_core::CanvasError::InvalidQuizAvailability(detail) => {
+                json!({ "detail": detail })
             }
             canvas_core::CanvasError::InvalidFileUpload(detail) => {
                 json!({ "detail": detail })
@@ -3561,6 +4108,232 @@ impl TryFrom<(SubmissionCommand, &GlobalOptions)> for SubmissionRequest {
                     assignment_id,
                     format,
                     file,
+                }))
+            }
+        }
+    }
+}
+
+impl TryFrom<(QuizCommand, &GlobalOptions)> for QuizRequest {
+    type Error = CliError;
+
+    fn try_from(input: (QuizCommand, &GlobalOptions)) -> Result<Self, Self::Error> {
+        let (command, global) = input;
+        match command {
+            QuizCommand::List { course } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                Ok(QuizRequest::List(QuizListRequest { course_id }))
+            }
+            QuizCommand::Create {
+                course,
+                title,
+                points,
+                time_limit,
+                access_code,
+                unlock_at,
+                due_at,
+                lock_at,
+                publish_state,
+            } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let title = canvas_core::parse_quiz_title(&title)?;
+                let points = match points {
+                    Some(raw) => Some(canvas_core::parse_points_possible(&raw)?),
+                    None => None,
+                };
+                let time_limit = match time_limit {
+                    Some(raw) => Some(canvas_core::parse_quiz_time_limit(&raw)?),
+                    None => None,
+                };
+                let access_code = match access_code {
+                    Some(raw) => Some(canvas_core::parse_quiz_access_code(&raw)?),
+                    None => None,
+                };
+                let unlock_at = match unlock_at {
+                    Some(raw) => Some(canvas_core::parse_due_date(&raw)?),
+                    None => None,
+                };
+                let due_at = match due_at {
+                    Some(raw) => Some(canvas_core::parse_due_date(&raw)?),
+                    None => None,
+                };
+                let lock_at = match lock_at {
+                    Some(raw) => Some(canvas_core::parse_due_date(&raw)?),
+                    None => None,
+                };
+                let availability = canvas_core::parse_quiz_availability(
+                    unlock_at,
+                    due_at,
+                    lock_at,
+                )?;
+                let publish_state = match publish_state {
+                    Some(raw) => Some(canvas_core::parse_publish_state(&raw)?),
+                    None => None,
+                };
+                let input = canvas_core::QuizCreateInput::new(
+                    title,
+                    points,
+                    publish_state,
+                    time_limit,
+                    access_code,
+                    availability,
+                );
+                Ok(QuizRequest::Create(QuizCreateRequest { course_id, input }))
+            }
+            QuizCommand::Update {
+                course,
+                quiz,
+                title,
+                points,
+                time_limit,
+                access_code,
+                unlock_at,
+                due_at,
+                lock_at,
+                publish_state,
+            } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let quiz_id = canvas_core::parse_quiz_id(&quiz)?;
+                let title = match title {
+                    Some(raw) => Some(canvas_core::parse_quiz_title(&raw)?),
+                    None => None,
+                };
+                let points = match points {
+                    Some(raw) => Some(canvas_core::parse_points_possible(&raw)?),
+                    None => None,
+                };
+                let time_limit = match time_limit {
+                    Some(raw) => Some(canvas_core::parse_quiz_time_limit(&raw)?),
+                    None => None,
+                };
+                let access_code = match access_code {
+                    Some(raw) => Some(canvas_core::parse_quiz_access_code(&raw)?),
+                    None => None,
+                };
+                let unlock_at = match unlock_at {
+                    Some(raw) => Some(canvas_core::parse_due_date(&raw)?),
+                    None => None,
+                };
+                let due_at = match due_at {
+                    Some(raw) => Some(canvas_core::parse_due_date(&raw)?),
+                    None => None,
+                };
+                let lock_at = match lock_at {
+                    Some(raw) => Some(canvas_core::parse_due_date(&raw)?),
+                    None => None,
+                };
+                let availability = canvas_core::parse_quiz_availability(
+                    unlock_at,
+                    due_at,
+                    lock_at,
+                )?;
+                let publish_state = match publish_state {
+                    Some(raw) => Some(canvas_core::parse_publish_state(&raw)?),
+                    None => None,
+                };
+                let input = canvas_core::QuizUpdateInput::new(
+                    title,
+                    points,
+                    publish_state,
+                    time_limit,
+                    access_code,
+                    availability,
+                )?;
+                Ok(QuizRequest::Update(QuizUpdateRequest {
+                    course_id,
+                    quiz_id,
+                    input,
+                }))
+            }
+            QuizCommand::Delete { course, quiz } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let quiz_id = canvas_core::parse_quiz_id(&quiz)?;
+                Ok(QuizRequest::Delete(QuizDeleteRequest {
+                    course_id,
+                    quiz_id,
+                }))
+            }
+            QuizCommand::Publish {
+                course,
+                quiz,
+                publish_state,
+            } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let quiz_id = canvas_core::parse_quiz_id(&quiz)?;
+                let publish_state = canvas_core::parse_publish_state(&publish_state)?;
+                Ok(QuizRequest::Publish(QuizPublishRequest {
+                    course_id,
+                    quiz_id,
+                    publish_state,
+                }))
+            }
+            QuizCommand::Submission { command } => {
+                let request = QuizSubmissionRequest::try_from((command, global))?;
+                Ok(QuizRequest::Submission(request))
+            }
+        }
+    }
+}
+
+impl TryFrom<(QuizSubmissionCommand, &GlobalOptions)> for QuizSubmissionRequest {
+    type Error = CliError;
+
+    fn try_from(
+        input: (QuizSubmissionCommand, &GlobalOptions),
+    ) -> Result<Self, Self::Error> {
+        let (command, global) = input;
+        match command {
+            QuizSubmissionCommand::List { course, quiz } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let quiz_id = canvas_core::parse_quiz_id(&quiz)?;
+                Ok(QuizSubmissionRequest::List(QuizSubmissionListRequest {
+                    course_id,
+                    quiz_id,
+                }))
+            }
+            QuizSubmissionCommand::Grade {
+                course,
+                quiz,
+                submission,
+                score,
+            } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let quiz_id = canvas_core::parse_quiz_id(&quiz)?;
+                let submission_id =
+                    canvas_core::parse_quiz_submission_id(&submission)?;
+                Ok(QuizSubmissionRequest::Grade(QuizSubmissionGradeRequest {
+                    course_id,
+                    quiz_id,
+                    submission_id,
+                    score,
                 }))
             }
         }

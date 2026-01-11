@@ -6,14 +6,16 @@ mod courses;
 mod content;
 mod people;
 mod reports;
+mod quizzes;
 
 use canvas_models::{
     AssignmentId, AssignmentName, CanvasHost, CanvasToken, CourseDates, CourseId,
     CourseVisibility, DiscussionId, DueDate, FileId, FolderId, FolderName,
     GradingSchemeId, GroupId, GroupName, MessageBody, MessageSubject, ModuleId,
     ModuleName, PageBody, PageId, PageTitle, PointsPossible, PublishState,
-    RecipientIds, ReportType, RubricAssessment, RubricSelection, Score,
-    SubmissionId, UserId, UserRole,
+    QuizAccessCode, QuizAvailability, QuizId, QuizSubmissionId, QuizTimeLimit,
+    QuizTitle, RecipientIds, ReportType, RubricAssessment, RubricSelection,
+    Score, SubmissionId, UserId, UserRole,
 };
 use thiserror::Error;
 
@@ -38,6 +40,11 @@ pub use people::{
     create_group, list_groups, list_users, send_message, GroupSummary,
     MessageSendInput, MessageSendResult, UserSummary,
 };
+pub use quizzes::{
+    create_quiz, delete_quiz, ensure_quiz_points, get_quiz, grade_quiz_submission,
+    list_quiz_submissions, list_quizzes, update_quiz, QuizCreateInput,
+    QuizSubmissionSummary, QuizSummary, QuizUpdateInput,
+};
 pub use reports::{
     download_report_to_writer, get_course_activity_summary, get_report, request_report,
     wait_for_report, CourseActivitySummary, ReportState, ReportSummary, ReportWaitOptions,
@@ -51,6 +58,12 @@ pub enum CanvasError {
     InvalidAssignmentId(String),
     #[error("invalid assignment name: {0}")]
     InvalidAssignmentName(String),
+    #[error("invalid quiz id: {0}")]
+    InvalidQuizId(String),
+    #[error("invalid quiz submission id: {0}")]
+    InvalidQuizSubmissionId(String),
+    #[error("invalid quiz title: {0}")]
+    InvalidQuizTitle(String),
     #[error("invalid user id: {0}")]
     InvalidUserId(String),
     #[error("invalid submission id: {0}")]
@@ -91,6 +104,10 @@ pub enum CanvasError {
     InvalidPointsPossible(String),
     #[error("invalid due date: {0}")]
     InvalidDueDate(String),
+    #[error("invalid quiz time limit: {0}")]
+    InvalidQuizTimeLimit(String),
+    #[error("invalid quiz access code: {0}")]
+    InvalidQuizAccessCode(String),
     #[error("invalid publish state: {0}")]
     InvalidPublishState(String),
     #[error("invalid rubric selection: {0}")]
@@ -109,6 +126,8 @@ pub enum CanvasError {
     InvalidCourseUpdate(String),
     #[error("invalid assignment update: {0}")]
     InvalidAssignmentUpdate(String),
+    #[error("invalid quiz update: {0}")]
+    InvalidQuizUpdate(String),
     #[error("invalid page update: {0}")]
     InvalidPageUpdate(String),
     #[error("invalid module update: {0}")]
@@ -117,6 +136,10 @@ pub enum CanvasError {
     InvalidModuleReorder(String),
     #[error("missing assignment points for assignment id {0}")]
     MissingAssignmentPoints(u64),
+    #[error("missing quiz points for quiz id {0}")]
+    MissingQuizPoints(u64),
+    #[error("invalid quiz availability: {0}")]
+    InvalidQuizAvailability(String),
     #[error("invalid file upload: {0}")]
     InvalidFileUpload(String),
     #[error("report not ready: {0}")]
@@ -158,6 +181,23 @@ pub fn parse_assignment_id(raw: &str) -> Result<AssignmentId, CanvasError> {
 pub fn parse_assignment_name(raw: &str) -> Result<AssignmentName, CanvasError> {
     raw.parse::<AssignmentName>()
         .map_err(|_| CanvasError::InvalidAssignmentName(raw.to_string()))
+}
+
+pub fn parse_quiz_id(raw: &str) -> Result<QuizId, CanvasError> {
+    raw.parse::<QuizId>()
+        .map_err(|_| CanvasError::InvalidQuizId(raw.to_string()))
+}
+
+pub fn parse_quiz_submission_id(
+    raw: &str,
+) -> Result<QuizSubmissionId, CanvasError> {
+    raw.parse::<QuizSubmissionId>()
+        .map_err(|_| CanvasError::InvalidQuizSubmissionId(raw.to_string()))
+}
+
+pub fn parse_quiz_title(raw: &str) -> Result<QuizTitle, CanvasError> {
+    raw.parse::<QuizTitle>()
+        .map_err(|_| CanvasError::InvalidQuizTitle(raw.to_string()))
 }
 
 pub fn parse_user_id(raw: &str) -> Result<UserId, CanvasError> {
@@ -263,6 +303,31 @@ pub fn parse_points_possible(raw: &str) -> Result<PointsPossible, CanvasError> {
 pub fn parse_due_date(raw: &str) -> Result<DueDate, CanvasError> {
     raw.parse::<DueDate>()
         .map_err(|_| CanvasError::InvalidDueDate(raw.to_string()))
+}
+
+pub fn parse_quiz_time_limit(raw: &str) -> Result<QuizTimeLimit, CanvasError> {
+    raw.parse::<QuizTimeLimit>()
+        .map_err(|_| CanvasError::InvalidQuizTimeLimit(raw.to_string()))
+}
+
+pub fn parse_quiz_access_code(
+    raw: &str,
+) -> Result<QuizAccessCode, CanvasError> {
+    raw.parse::<QuizAccessCode>()
+        .map_err(|_| CanvasError::InvalidQuizAccessCode(raw.to_string()))
+}
+
+pub fn parse_quiz_availability(
+    unlock_at: Option<DueDate>,
+    due_at: Option<DueDate>,
+    lock_at: Option<DueDate>,
+) -> Result<Option<QuizAvailability>, CanvasError> {
+    if unlock_at.is_none() && due_at.is_none() && lock_at.is_none() {
+        return Ok(None);
+    }
+    QuizAvailability::new(unlock_at, due_at, lock_at)
+        .map(Some)
+        .map_err(|_| CanvasError::InvalidQuizAvailability("invalid_window".to_string()))
 }
 
 pub fn parse_publish_state(raw: &str) -> Result<PublishState, CanvasError> {
