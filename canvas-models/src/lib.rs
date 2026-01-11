@@ -2,8 +2,8 @@ use std::str::FromStr;
 
 use serde::Serialize;
 use thiserror::Error;
-use time::format_description::well_known::Rfc3339;  
-use time::OffsetDateTime;
+use time::format_description::{self, well_known::Rfc3339};
+use time::{Date, OffsetDateTime};
 use url::Url;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -64,6 +64,425 @@ impl FromStr for AssignmentId {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct OutcomeId(u64);
+
+impl OutcomeId {
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum OutcomeIdParseError {
+    #[error("outcome id must be a positive integer")]
+    Invalid,
+}
+
+impl FromStr for OutcomeId {
+    type Err = OutcomeIdParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        let value = trimmed
+            .parse::<u64>()
+            .map_err(|_| OutcomeIdParseError::Invalid)?;
+        if value == 0 {
+            return Err(OutcomeIdParseError::Invalid);
+        }
+        Ok(Self(value))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct OutcomeGroupId(u64);
+
+impl OutcomeGroupId {
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum OutcomeGroupIdParseError {
+    #[error("outcome group id must be a positive integer")]
+    Invalid,
+}
+
+impl FromStr for OutcomeGroupId {
+    type Err = OutcomeGroupIdParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        let value = trimmed
+            .parse::<u64>()
+            .map_err(|_| OutcomeGroupIdParseError::Invalid)?;
+        if value == 0 {
+            return Err(OutcomeGroupIdParseError::Invalid);
+        }
+        Ok(Self(value))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct RubricId(u64);
+
+impl RubricId {
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum RubricIdParseError {
+    #[error("rubric id must be a positive integer")]
+    Invalid,
+}
+
+impl FromStr for RubricId {
+    type Err = RubricIdParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        let value = trimmed
+            .parse::<u64>()
+            .map_err(|_| RubricIdParseError::Invalid)?;
+        if value == 0 {
+            return Err(RubricIdParseError::Invalid);
+        }
+        Ok(Self(value))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct RubricAssociationId(u64);
+
+impl RubricAssociationId {
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum RubricAssociationIdParseError {
+    #[error("rubric association id must be a positive integer")]
+    Invalid,
+}
+
+impl FromStr for RubricAssociationId {
+    type Err = RubricAssociationIdParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        let value = trimmed
+            .parse::<u64>()
+            .map_err(|_| RubricAssociationIdParseError::Invalid)?;
+        if value == 0 {
+            return Err(RubricAssociationIdParseError::Invalid);
+        }
+        Ok(Self(value))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct QuizId(u64);
+
+impl QuizId {
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum QuizIdParseError {
+    #[error("quiz id must be a positive integer")]
+    Invalid,
+}
+
+impl FromStr for QuizId {
+    type Err = QuizIdParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        let value = trimmed
+            .parse::<u64>()
+            .map_err(|_| QuizIdParseError::Invalid)?;
+        if value == 0 {
+            return Err(QuizIdParseError::Invalid);
+        }
+        Ok(Self(value))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct QuizSubmissionId(u64);
+
+impl QuizSubmissionId {
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum QuizSubmissionIdParseError {
+    #[error("quiz submission id must be a positive integer")]
+    Invalid,
+}
+
+impl FromStr for QuizSubmissionId {
+    type Err = QuizSubmissionIdParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        let value = trimmed
+            .parse::<u64>()
+            .map_err(|_| QuizSubmissionIdParseError::Invalid)?;
+        if value == 0 {
+            return Err(QuizSubmissionIdParseError::Invalid);
+        }
+        Ok(Self(value))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct QuestionBankId(u64);
+
+impl QuestionBankId {
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum QuestionBankIdParseError {
+    #[error("question bank id must be a positive integer")]
+    Invalid,
+}
+
+impl FromStr for QuestionBankId {
+    type Err = QuestionBankIdParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        let value = trimmed
+            .parse::<u64>()
+            .map_err(|_| QuestionBankIdParseError::Invalid)?;
+        if value == 0 {
+            return Err(QuestionBankIdParseError::Invalid);
+        }
+        Ok(Self(value))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct QuestionId(u64);
+
+impl QuestionId {
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum QuestionIdParseError {
+    #[error("question id must be a positive integer")]
+    Invalid,
+}
+
+impl FromStr for QuestionId {
+    type Err = QuestionIdParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        let value = trimmed
+            .parse::<u64>()
+            .map_err(|_| QuestionIdParseError::Invalid)?;
+        if value == 0 {
+            return Err(QuestionIdParseError::Invalid);
+        }
+        Ok(Self(value))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CalendarEventId(u64);
+
+impl CalendarEventId {
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum CalendarEventIdParseError {
+    #[error("calendar event id must be a positive integer")]
+    Invalid,
+}
+
+impl FromStr for CalendarEventId {
+    type Err = CalendarEventIdParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        let value = trimmed
+            .parse::<u64>()
+            .map_err(|_| CalendarEventIdParseError::Invalid)?;
+        if value == 0 {
+            return Err(CalendarEventIdParseError::Invalid);
+        }
+        Ok(Self(value))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SectionId(u64);
+
+impl SectionId {
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum SectionIdParseError {
+    #[error("section id must be a positive integer")]
+    Invalid,
+}
+
+impl FromStr for SectionId {
+    type Err = SectionIdParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        let value = trimmed
+            .parse::<u64>()
+            .map_err(|_| SectionIdParseError::Invalid)?;
+        if value == 0 {
+            return Err(SectionIdParseError::Invalid);
+        }
+        Ok(Self(value))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ExternalToolId(u64);
+
+impl ExternalToolId {
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum ExternalToolIdParseError {
+    #[error("external tool id must be a positive integer")]
+    Invalid,
+}
+
+impl FromStr for ExternalToolId {
+    type Err = ExternalToolIdParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        let value = trimmed
+            .parse::<u64>()
+            .map_err(|_| ExternalToolIdParseError::Invalid)?;
+        if value == 0 {
+            return Err(ExternalToolIdParseError::Invalid);
+        }
+        Ok(Self(value))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ExternalToolName(String);
+
+impl ExternalToolName {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum ExternalToolNameParseError {
+    #[error("external tool name cannot be empty")]
+    Empty,
+}
+
+impl FromStr for ExternalToolName {
+    type Err = ExternalToolNameParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(ExternalToolNameParseError::Empty);
+        }
+        Ok(Self(trimmed.to_string()))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ExternalToolConfigUrl(Url);
+
+impl ExternalToolConfigUrl {
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum ExternalToolConfigUrlParseError {
+    #[error("external tool config url cannot be empty")]
+    Empty,
+    #[error("external tool config url must be a valid url")]
+    InvalidUrl,
+    #[error("external tool config url must use http or https")]
+    InvalidScheme,
+}
+
+impl FromStr for ExternalToolConfigUrl {
+    type Err = ExternalToolConfigUrlParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(ExternalToolConfigUrlParseError::Empty);
+        }
+        let parsed = Url::parse(trimmed).map_err(|_| ExternalToolConfigUrlParseError::InvalidUrl)?;
+        match parsed.scheme() {
+            "http" | "https" => Ok(Self(parsed)),
+            _ => Err(ExternalToolConfigUrlParseError::InvalidScheme),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ExternalToolPlacement(String);
+
+impl ExternalToolPlacement {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum ExternalToolPlacementParseError {
+    #[error("external tool placement cannot be empty")]
+    Empty,
+}
+
+impl FromStr for ExternalToolPlacement {
+    type Err = ExternalToolPlacementParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(ExternalToolPlacementParseError::Empty);
+        }
+        Ok(Self(trimmed.to_string()))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AssignmentName(String);
 
@@ -91,6 +510,222 @@ impl FromStr for AssignmentName {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct OutcomeTitle(String);
+
+impl OutcomeTitle {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum OutcomeTitleParseError {
+    #[error("outcome title must not be empty")]
+    Empty,
+}
+
+impl FromStr for OutcomeTitle {
+    type Err = OutcomeTitleParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(OutcomeTitleParseError::Empty);
+        }
+        Ok(Self(trimmed.to_string()))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct OutcomeDescription(String);
+
+impl OutcomeDescription {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum OutcomeDescriptionParseError {
+    #[error("outcome description must not be empty")]
+    Empty,
+}
+
+impl FromStr for OutcomeDescription {
+    type Err = OutcomeDescriptionParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(OutcomeDescriptionParseError::Empty);
+        }
+        Ok(Self(trimmed.to_string()))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RubricTitle(String);
+
+impl RubricTitle {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum RubricTitleParseError {
+    #[error("rubric title must not be empty")]
+    Empty,
+}
+
+impl FromStr for RubricTitle {
+    type Err = RubricTitleParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(RubricTitleParseError::Empty);
+        }
+        Ok(Self(trimmed.to_string()))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CalendarEventTitle(String);
+
+impl CalendarEventTitle {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum CalendarEventTitleParseError {
+    #[error("calendar event title must not be empty")]
+    Empty,
+}
+
+impl FromStr for CalendarEventTitle {
+    type Err = CalendarEventTitleParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(CalendarEventTitleParseError::Empty);
+        }
+        Ok(Self(trimmed.to_string()))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct QuizTitle(String);
+
+impl QuizTitle {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum QuizTitleParseError {
+    #[error("quiz title must not be empty")]
+    Empty,
+}
+
+impl FromStr for QuizTitle {
+    type Err = QuizTitleParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(QuizTitleParseError::Empty);
+        }
+        Ok(Self(trimmed.to_string()))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct QuestionBankTitle(String);
+
+impl QuestionBankTitle {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum QuestionBankTitleParseError {
+    #[error("question bank title must not be empty")]
+    Empty,
+}
+
+impl FromStr for QuestionBankTitle {
+    type Err = QuestionBankTitleParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(QuestionBankTitleParseError::Empty);
+        }
+        Ok(Self(trimmed.to_string()))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct QuestionName(String);
+
+impl QuestionName {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum QuestionNameParseError {
+    #[error("question name must not be empty")]
+    Empty,
+}
+
+impl FromStr for QuestionName {
+    type Err = QuestionNameParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(QuestionNameParseError::Empty);
+        }
+        Ok(Self(trimmed.to_string()))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct QuestionText(String);
+
+impl QuestionText {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum QuestionTextParseError {
+    #[error("question text must not be empty")]
+    Empty,
+}
+
+impl FromStr for QuestionText {
+    type Err = QuestionTextParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(QuestionTextParseError::Empty);
+        }
+        Ok(Self(trimmed.to_string()))
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct UserId(u64);
 
@@ -98,6 +733,77 @@ impl UserId {
     pub fn get(self) -> u64 {
         self.0
     }
+}
+
+impl TryFrom<u64> for UserId {
+    type Error = UserIdParseError;
+
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
+        if value == 0 {
+            return Err(UserIdParseError::Invalid);
+        }
+        Ok(Self(value))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UserRole {
+    Student,
+    Ta,
+    Teacher,
+}
+
+impl UserRole {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            UserRole::Student => "student",
+            UserRole::Ta => "ta",
+            UserRole::Teacher => "teacher",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum UserRoleParseError {
+    #[error("user role must be student, ta, or teacher")]
+    Invalid,
+}
+
+impl FromStr for UserRole {
+    type Err = UserRoleParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "student" | "students" => Ok(UserRole::Student),
+            "ta" | "tas" | "teachingassistant" | "teaching_assistant" => {
+                Ok(UserRole::Ta)
+            }
+            "teacher" | "teachers" => Ok(UserRole::Teacher),
+            _ => Err(UserRoleParseError::Invalid),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecipientIds(Vec<UserId>);
+
+impl RecipientIds {
+    pub fn new(ids: Vec<UserId>) -> Result<Self, RecipientIdsError> {
+        if ids.is_empty() {
+            return Err(RecipientIdsError::Empty);
+        }
+        Ok(Self(ids))
+    }
+
+    pub fn ids(&self) -> &[UserId] {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum RecipientIdsError {
+    #[error("recipients must not be empty")]
+    Empty,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
@@ -144,6 +850,371 @@ impl FromStr for SubmissionId {
             .map_err(|_| SubmissionIdParseError::Invalid)?;
         if value == 0 {
             return Err(SubmissionIdParseError::Invalid);
+        }
+        Ok(Self(value))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PageId(String);
+
+impl PageId {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum PageIdParseError {
+    #[error("page id must not be empty")]
+    Empty,
+}
+
+impl FromStr for PageId {
+    type Err = PageIdParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(PageIdParseError::Empty);
+        }
+        Ok(Self(trimmed.to_string()))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PageTitle(String);
+
+impl PageTitle {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum PageTitleParseError {
+    #[error("page title must not be empty")]
+    Empty,
+}
+
+impl FromStr for PageTitle {
+    type Err = PageTitleParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(PageTitleParseError::Empty);
+        }
+        Ok(Self(trimmed.to_string()))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PageBody(String);
+
+impl PageBody {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct MessageSubject(String);
+
+impl MessageSubject {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum MessageSubjectParseError {
+    #[error("message subject must not be empty")]
+    Empty,
+}
+
+impl FromStr for MessageSubject {
+    type Err = MessageSubjectParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(MessageSubjectParseError::Empty);
+        }
+        Ok(Self(trimmed.to_string()))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct MessageBody(String);
+
+impl MessageBody {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum MessageBodyParseError {
+    #[error("message body must not be empty")]
+    Empty,
+}
+
+impl FromStr for MessageBody {
+    type Err = MessageBodyParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(MessageBodyParseError::Empty);
+        }
+        Ok(Self(trimmed.to_string()))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum PageBodyParseError {
+    #[error("page body must not be empty")]
+    Empty,
+}
+
+impl FromStr for PageBody {
+    type Err = PageBodyParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(PageBodyParseError::Empty);
+        }
+        Ok(Self(trimmed.to_string()))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ModuleId(u64);
+
+impl ModuleId {
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum ModuleIdParseError {
+    #[error("module id must be a positive integer")]
+    Invalid,
+}
+
+impl FromStr for ModuleId {
+    type Err = ModuleIdParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        let value = trimmed
+            .parse::<u64>()
+            .map_err(|_| ModuleIdParseError::Invalid)?;
+        if value == 0 {
+            return Err(ModuleIdParseError::Invalid);
+        }
+        Ok(Self(value))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ModuleName(String);
+
+impl ModuleName {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum ModuleNameParseError {
+    #[error("module name must not be empty")]
+    Empty,
+}
+
+impl FromStr for ModuleName {
+    type Err = ModuleNameParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(ModuleNameParseError::Empty);
+        }
+        Ok(Self(trimmed.to_string()))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FileId(u64);
+
+impl FileId {
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum FileIdParseError {
+    #[error("file id must be a positive integer")]
+    Invalid,
+}
+
+impl FromStr for FileId {
+    type Err = FileIdParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        let value = trimmed
+            .parse::<u64>()
+            .map_err(|_| FileIdParseError::Invalid)?;
+        if value == 0 {
+            return Err(FileIdParseError::Invalid);
+        }
+        Ok(Self(value))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FolderId(u64);
+
+impl FolderId {
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum FolderIdParseError {
+    #[error("folder id must be a positive integer")]
+    Invalid,
+}
+
+impl FromStr for FolderId {
+    type Err = FolderIdParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        let value = trimmed
+            .parse::<u64>()
+            .map_err(|_| FolderIdParseError::Invalid)?;
+        if value == 0 {
+            return Err(FolderIdParseError::Invalid);
+        }
+        Ok(Self(value))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct FolderName(String);
+
+impl FolderName {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct GroupId(u64);
+
+impl GroupId {
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum GroupIdParseError {
+    #[error("group id must be a positive integer")]
+    Invalid,
+}
+
+impl FromStr for GroupId {
+    type Err = GroupIdParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        let value =
+            trimmed.parse::<u64>().map_err(|_| GroupIdParseError::Invalid)?;
+        if value == 0 {
+            return Err(GroupIdParseError::Invalid);
+        }
+        Ok(Self(value))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct GroupName(String);
+
+impl GroupName {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum GroupNameParseError {
+    #[error("group name must not be empty")]
+    Empty,
+}
+
+impl FromStr for GroupName {
+    type Err = GroupNameParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(GroupNameParseError::Empty);
+        }
+        Ok(Self(trimmed.to_string()))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum FolderNameParseError {
+    #[error("folder name must not be empty")]
+    Empty,
+}
+
+impl FromStr for FolderName {
+    type Err = FolderNameParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(FolderNameParseError::Empty);
+        }
+        Ok(Self(trimmed.to_string()))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct DiscussionId(u64);
+
+impl DiscussionId {
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum DiscussionIdParseError {
+    #[error("discussion id must be a positive integer")]
+    Invalid,
+}
+
+impl FromStr for DiscussionId {
+    type Err = DiscussionIdParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        let value = trimmed
+            .parse::<u64>()
+            .map_err(|_| DiscussionIdParseError::Invalid)?;
+        if value == 0 {
+            return Err(DiscussionIdParseError::Invalid);
         }
         Ok(Self(value))
     }
@@ -294,6 +1365,296 @@ impl FromStr for DueDate {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EventDateTime(OffsetDateTime);
+
+impl EventDateTime {
+    pub fn as_rfc3339(&self) -> String {
+        self.0
+            .format(&Rfc3339)
+            .unwrap_or_else(|_| self.0.to_string())
+    }
+
+    pub fn inner(self) -> OffsetDateTime {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum EventDateTimeParseError {
+    #[error("event timestamp must be an RFC 3339 timestamp")]
+    Invalid,
+}
+
+impl FromStr for EventDateTime {
+    type Err = EventDateTimeParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        let parsed = OffsetDateTime::parse(trimmed, &Rfc3339)
+            .map_err(|_| EventDateTimeParseError::Invalid)?;
+        Ok(Self(parsed))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AllDayDate(Date);
+
+impl AllDayDate {
+    pub fn as_iso8601(&self) -> String {
+        self.0.to_string()
+    }
+
+    pub fn inner(self) -> Date {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum AllDayDateParseError {
+    #[error("all-day date must be an ISO-8601 date (YYYY-MM-DD)")]
+    Invalid,
+}
+
+impl FromStr for AllDayDate {
+    type Err = AllDayDateParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        let format = format_description::parse("[year]-[month]-[day]")
+            .map_err(|_| AllDayDateParseError::Invalid)?;
+        let parsed = Date::parse(trimmed, &format)
+            .map_err(|_| AllDayDateParseError::Invalid)?;
+        Ok(Self(parsed))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CalendarEventContext {
+    Course(CourseId),
+    Section(SectionId),
+}
+
+impl CalendarEventContext {
+    pub fn context_code(self) -> String {
+        match self {
+            CalendarEventContext::Course(course_id) => {
+                format!("course_{}", course_id.get())
+            }
+            CalendarEventContext::Section(section_id) => {
+                format!("section_{}", section_id.get())
+            }
+        }
+    }
+
+    pub fn context_type(self) -> &'static str {
+        match self {
+            CalendarEventContext::Course(_) => "course",
+            CalendarEventContext::Section(_) => "section",
+        }
+    }
+
+    pub fn context_id(self) -> u64 {
+        match self {
+            CalendarEventContext::Course(course_id) => course_id.get(),
+            CalendarEventContext::Section(section_id) => section_id.get(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QuizTimeLimit(u32);
+
+impl QuizTimeLimit {
+    pub fn minutes(self) -> u32 {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum QuizTimeLimitParseError {
+    #[error("quiz time limit must be a positive integer of minutes")]
+    Invalid,
+}
+
+impl FromStr for QuizTimeLimit {
+    type Err = QuizTimeLimitParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        let value = trimmed
+            .parse::<u32>()
+            .map_err(|_| QuizTimeLimitParseError::Invalid)?;
+        if value == 0 {
+            return Err(QuizTimeLimitParseError::Invalid);
+        }
+        Ok(Self(value))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuizAccessCode(String);
+
+impl QuizAccessCode {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum QuizAccessCodeParseError {
+    #[error("quiz access code must not be empty")]
+    Empty,
+}
+
+impl FromStr for QuizAccessCode {
+    type Err = QuizAccessCodeParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(QuizAccessCodeParseError::Empty);
+        }
+        Ok(Self(trimmed.to_string()))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum QuestionType {
+    MultipleChoice,
+    MultipleAnswers,
+    TrueFalse,
+    Essay,
+    ShortAnswer,
+    Matching,
+    FillInMultipleBlanks,
+    MultipleDropdowns,
+    Numerical,
+    Calculated,
+    FileUpload,
+    TextOnly,
+}
+
+impl QuestionType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            QuestionType::MultipleChoice => "multiple_choice_question",
+            QuestionType::MultipleAnswers => "multiple_answers_question",
+            QuestionType::TrueFalse => "true_false_question",
+            QuestionType::Essay => "essay_question",
+            QuestionType::ShortAnswer => "short_answer_question",
+            QuestionType::Matching => "matching_question",
+            QuestionType::FillInMultipleBlanks => "fill_in_multiple_blanks_question",
+            QuestionType::MultipleDropdowns => "multiple_dropdowns_question",
+            QuestionType::Numerical => "numerical_question",
+            QuestionType::Calculated => "calculated_question",
+            QuestionType::FileUpload => "file_upload_question",
+            QuestionType::TextOnly => "text_only_question",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum QuestionTypeParseError {
+    #[error(
+        "question type must be multiple_choice, multiple_answers, true_false, essay, short_answer, matching, fill_in_multiple_blanks, multiple_dropdowns, numerical, calculated, file_upload, or text_only"
+    )]
+    Invalid,
+}
+
+impl FromStr for QuestionType {
+    type Err = QuestionTypeParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "mcq"
+            | "multiple_choice"
+            | "multiple-choice"
+            | "multiple_choice_question" => Ok(QuestionType::MultipleChoice),
+            "multiple_answers" | "multiple-answers" | "multiple_answers_question" => {
+                Ok(QuestionType::MultipleAnswers)
+            }
+            "true_false" | "true-false" | "true_false_question" => Ok(QuestionType::TrueFalse),
+            "essay" | "essay_question" => Ok(QuestionType::Essay),
+            "short_answer" | "short-answer" | "short_answer_question" => {
+                Ok(QuestionType::ShortAnswer)
+            }
+            "matching" | "matching_question" => Ok(QuestionType::Matching),
+            "fill_in_multiple_blanks"
+            | "fill-in-multiple-blanks"
+            | "fill_in_multiple_blanks_question" => Ok(QuestionType::FillInMultipleBlanks),
+            "multiple_dropdowns"
+            | "multiple-dropdowns"
+            | "multiple_dropdowns_question" => Ok(QuestionType::MultipleDropdowns),
+            "numerical" | "numerical_question" => Ok(QuestionType::Numerical),
+            "calculated" | "calculated_question" => Ok(QuestionType::Calculated),
+            "file_upload" | "file-upload" | "file_upload_question" => {
+                Ok(QuestionType::FileUpload)
+            }
+            "text_only" | "text-only" | "text_only_question" => Ok(QuestionType::TextOnly),
+            _ => Err(QuestionTypeParseError::Invalid),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QuizAvailability {
+    unlock_at: Option<DueDate>,
+    due_at: Option<DueDate>,
+    lock_at: Option<DueDate>,
+}
+
+impl QuizAvailability {
+    pub fn new(
+        unlock_at: Option<DueDate>,
+        due_at: Option<DueDate>,
+        lock_at: Option<DueDate>,
+    ) -> Result<Self, QuizAvailabilityError> {
+        if let (Some(unlock_at), Some(due_at)) = (unlock_at, due_at)
+            && unlock_at.inner() > due_at.inner()
+        {
+            return Err(QuizAvailabilityError::UnlockAfterDue);
+        }
+        if let (Some(unlock_at), Some(lock_at)) = (unlock_at, lock_at)
+            && unlock_at.inner() > lock_at.inner()
+        {
+            return Err(QuizAvailabilityError::UnlockAfterLock);
+        }
+        if let (Some(due_at), Some(lock_at)) = (due_at, lock_at)
+            && due_at.inner() > lock_at.inner()
+        {
+            return Err(QuizAvailabilityError::DueAfterLock);
+        }
+        Ok(Self {
+            unlock_at,
+            due_at,
+            lock_at,
+        })
+    }
+
+    pub fn unlock_at(self) -> Option<DueDate> {
+        self.unlock_at
+    }
+
+    pub fn due_at(self) -> Option<DueDate> {
+        self.due_at
+    }
+
+    pub fn lock_at(self) -> Option<DueDate> {
+        self.lock_at
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum QuizAvailabilityError {
+    #[error("quiz unlock date must be on or before the due date")]
+    UnlockAfterDue,
+    #[error("quiz unlock date must be on or before the lock date")]
+    UnlockAfterLock,
+    #[error("quiz due date must be on or before the lock date")]
+    DueAfterLock,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PublishState {
     Published,
     Unpublished,
@@ -391,6 +1752,48 @@ impl FromStr for CourseVisibility {
             "institution" => Ok(CourseVisibility::Institution),
             "course" => Ok(CourseVisibility::Course),
             _ => Err(CourseVisibilityParseError::Invalid),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReportType {
+    GradebookExport,
+    MissingSubmissions,
+    CourseActivity,
+}
+
+impl ReportType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ReportType::GradebookExport => "grade_export",
+            ReportType::MissingSubmissions => "missing_submissions",
+            ReportType::CourseActivity => "course_activity",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum ReportTypeParseError {
+    #[error("report type must be gradebook, missing_submissions, or course_activity")]
+    Invalid,
+}
+
+impl FromStr for ReportType {
+    type Err = ReportTypeParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "gradebook" | "gradebook_export" | "grade_export" => {
+                Ok(ReportType::GradebookExport)
+            }
+            "missing_submissions" | "submission_status" | "submission_status_summary" => {
+                Ok(ReportType::MissingSubmissions)
+            }
+            "course_activity" | "activity" | "course_activity_summary" => {
+                Ok(ReportType::CourseActivity)
+            }
+            _ => Err(ReportTypeParseError::Invalid),
         }
     }
 }
@@ -534,9 +1937,16 @@ impl FromStr for CanvasToken {
 #[cfg(test)]
 mod tests {
     use super::{
-        AssignmentId, AssignmentName, CanvasHost, CanvasToken, CourseDates, CourseId,
-        CourseVisibility, DueDate, GradingSchemeId, PointsPossible, PublishState,
-        RubricAssessment, RubricSelection, Score, SubmissionId, UserId,
+        AllDayDate, AssignmentId, AssignmentName, CalendarEventId, CalendarEventTitle,
+        CanvasHost, CanvasToken, CourseDates, CourseId, CourseVisibility, DiscussionId,
+        DueDate, EventDateTime, ExternalToolConfigUrl, ExternalToolId, ExternalToolName,
+        ExternalToolPlacement, FileId, FolderId, FolderName, GroupId, GroupName,
+        GradingSchemeId, MessageBody, MessageSubject, ModuleId, ModuleName,
+        OutcomeDescription, OutcomeGroupId, OutcomeId, OutcomeTitle, PageBody, PageId,
+        PageTitle, PointsPossible, PublishState, QuestionBankId, QuestionBankTitle,
+        QuestionId, QuestionName, QuestionText, QuestionType, RecipientIds, ReportType,
+        RubricAssociationId, RubricAssessment, RubricId, RubricSelection, RubricTitle,
+        Score, SectionId, SubmissionId, UserId, UserRole,
     };
 
     #[test]
@@ -576,9 +1986,153 @@ mod tests {
     }
 
     #[test]
+    fn outcome_id_rejects_zero() {
+        let parsed: Result<OutcomeId, _> = "0".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn outcome_group_id_rejects_zero() {
+        let parsed: Result<OutcomeGroupId, _> = "0".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn rubric_id_rejects_zero() {
+        let parsed: Result<RubricId, _> = "0".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn rubric_association_id_rejects_zero() {
+        let parsed: Result<RubricAssociationId, _> = "0".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn outcome_title_rejects_empty() {
+        let parsed: Result<OutcomeTitle, _> = "   ".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn outcome_description_rejects_empty() {
+        let parsed: Result<OutcomeDescription, _> = "".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn rubric_title_rejects_empty() {
+        let parsed: Result<RubricTitle, _> = "  ".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn calendar_event_id_rejects_zero() {
+        let parsed: Result<CalendarEventId, _> = "0".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn section_id_rejects_zero() {
+        let parsed: Result<SectionId, _> = "0".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn external_tool_id_rejects_zero() {
+        let parsed: Result<ExternalToolId, _> = "0".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn external_tool_name_rejects_empty() {
+        let parsed: Result<ExternalToolName, _> = "  ".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn external_tool_config_url_requires_http() {
+        let parsed: Result<ExternalToolConfigUrl, _> = "ftp://example.com".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn external_tool_placement_rejects_empty() {
+        let parsed: Result<ExternalToolPlacement, _> = "".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn calendar_event_title_rejects_empty() {
+        let parsed: Result<CalendarEventTitle, _> = "   ".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn question_bank_id_rejects_zero() {
+        let parsed: Result<QuestionBankId, _> = "0".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn question_id_rejects_non_numbers() {
+        let parsed: Result<QuestionId, _> = "abc".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn question_bank_title_rejects_empty() {
+        let parsed: Result<QuestionBankTitle, _> = "   ".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn question_name_rejects_empty() {
+        let parsed: Result<QuestionName, _> = " ".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn question_text_rejects_empty() {
+        let parsed: Result<QuestionText, _> = "".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn question_type_accepts_mcq_alias() {
+        let parsed: Result<QuestionType, _> = "mcq".parse();
+        assert!(matches!(parsed, Ok(kind) if kind == QuestionType::MultipleChoice));
+    }
+
+    #[test]
+    fn question_type_rejects_unknown() {
+        let parsed: Result<QuestionType, _> = "unknown".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn event_date_time_parses_rfc3339() {
+        let parsed: Result<EventDateTime, _> = "2025-01-01T12:00:00Z".parse();
+        assert!(parsed.is_ok());
+    }
+
+    #[test]
+    fn all_day_date_parses_iso8601() {
+        let parsed: Result<AllDayDate, _> = "2025-01-01".parse();
+        assert!(parsed.is_ok());
+    }
+
+    #[test]
     fn user_id_rejects_non_numbers() {
         let parsed: Result<UserId, _> = "abc".parse();
         assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn user_id_try_from_accepts_positive() {
+        let parsed = UserId::try_from(4_u64);
+        assert!(matches!(parsed, Ok(value) if value.get() == 4));
     }
 
     #[test]
@@ -655,6 +2209,24 @@ mod tests {
     }
 
     #[test]
+    fn report_type_parses_gradebook() {
+        let parsed: Result<ReportType, _> = "grade_export".parse();
+        assert!(matches!(parsed, Ok(ReportType::GradebookExport)));
+    }
+
+    #[test]
+    fn report_type_parses_missing_submissions() {
+        let parsed: Result<ReportType, _> = "missing_submissions".parse();
+        assert!(matches!(parsed, Ok(ReportType::MissingSubmissions)));
+    }
+
+    #[test]
+    fn report_type_rejects_unknown() {
+        let parsed: Result<ReportType, _> = "unknown_report".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
     fn grading_scheme_id_rejects_zero() {
         let parsed: Result<GradingSchemeId, _> = "0".parse();
         assert!(parsed.is_err());
@@ -690,5 +2262,95 @@ mod tests {
     fn canvas_token_accepts_non_empty() {
         let token: Result<CanvasToken, _> = "token123".parse();
         assert!(matches!(token, Ok(token) if token.as_str() == "token123"));
+    }
+
+    #[test]
+    fn page_id_rejects_empty() {
+        let parsed: Result<PageId, _> = " ".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn page_title_rejects_empty() {
+        let parsed: Result<PageTitle, _> = "".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn page_body_rejects_empty() {
+        let parsed: Result<PageBody, _> = "   ".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn module_id_rejects_zero() {
+        let parsed: Result<ModuleId, _> = "0".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn module_name_rejects_empty() {
+        let parsed: Result<ModuleName, _> = "  ".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn file_id_rejects_zero() {
+        let parsed: Result<FileId, _> = "0".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn folder_id_rejects_zero() {
+        let parsed: Result<FolderId, _> = "0".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn folder_name_rejects_empty() {
+        let parsed: Result<FolderName, _> = " ".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn discussion_id_rejects_zero() {
+        let parsed: Result<DiscussionId, _> = "0".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn user_role_parses_known_values() {
+        let parsed: Result<UserRole, _> = "ta".parse();
+        assert!(matches!(parsed, Ok(UserRole::Ta)));
+    }
+
+    #[test]
+    fn message_subject_rejects_empty() {
+        let parsed: Result<MessageSubject, _> = "  ".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn message_body_rejects_empty() {
+        let parsed: Result<MessageBody, _> = "".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn recipient_ids_require_non_empty() {
+        let result = RecipientIds::new(Vec::new());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn group_id_rejects_zero() {
+        let parsed: Result<GroupId, _> = "0".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn group_name_rejects_empty() {
+        let parsed: Result<GroupName, _> = " ".parse();
+        assert!(parsed.is_err());
     }
 }

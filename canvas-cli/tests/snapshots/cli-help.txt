@@ -1,26 +1,32 @@
 Canvas CLI
 
-Usage: canvas-cli.exe [OPTIONS] [COMMAND]
+Usage: canvas [OPTIONS] [COMMAND]
 
 Commands:
-  auth          Authenticate with Canvas
-  config        Manage local configuration
-  course        Course-related operations
-  assignment    Assignment-related operations
-  submission    Submission-related operations
-  quiz          Quiz-related operations
-  page          Page-related operations
-  module        Module-related operations
-  file          File-related operations
-  folder        Folder-related operations
-  announcement  Announcement-related operations
-  discussion    Discussion-related operations
-  user          User-related operations
-  message       Messaging operations
-  group         Group-related operations
-  report        Analytics and report operations
-  ask           Natural-language command planning
-  help          Print this message or the help of the given subcommand(s)
+  auth           Authenticate with Canvas
+  config         Manage local configuration
+  course         Course-related operations
+  assignment     Assignment-related operations
+  outcome        Outcome-related operations
+  rubric         Rubric-related operations
+  submission     Submission-related operations
+  quiz           Quiz-related operations
+  question-bank  Question bank operations
+  question       Question operations
+  page           Page-related operations
+  module         Module-related operations
+  tool           External tool operations
+  calendar       Calendar event operations
+  file           File-related operations
+  folder         Folder-related operations
+  announcement   Announcement-related operations
+  discussion     Discussion-related operations
+  user           User-related operations
+  message        Messaging operations
+  group          Group-related operations
+  report         Analytics and report operations
+  ask            Natural-language command planning
+  help           Print this message or the help of the given subcommand(s)
 
 Options:
       --course <COURSE>  Default course id for course-related commands

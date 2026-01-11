@@ -6,8 +6,10 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 
 use canvas_models::{
-    AssignmentId, CourseId, FileId, FolderId, ModuleId, PageId, QuizId,
-    QuizSubmissionId, ReportType, UserId,
+    AssignmentId, CalendarEventContext, CalendarEventId, CourseId, FileId,
+    FolderId, ModuleId, OutcomeGroupId, OutcomeId, PageId, QuestionBankId,
+    QuestionId, QuizId, QuizSubmissionId, ReportType, RubricAssociationId,
+    RubricId, UserId,
 };
 use clap::{Args, Parser, Subcommand};
 use csv::ReaderBuilder;
@@ -15,11 +17,12 @@ use serde_json::{json, Value};
 use thiserror::Error;
 use tracing::info;
 
-const SCHEMA_VERSION: &str = "v1";
+const SCHEMA_VERSION: &str = "v3";
 
 #[derive(Debug, Parser)]
 #[command(
     name = "canvas",
+    bin_name = "canvas",
     version,
     about = "Canvas CLI",
     after_help = "Examples:\n  canvas auth check\n  canvas config init --confirm\n  canvas course list --course 42\n  canvas ask \"list assignments\" --json\n  canvas --schema"
@@ -79,6 +82,18 @@ enum Command {
         #[command(subcommand)]
         command: AssignmentCommand,
     },
+    /// Outcome-related operations
+    #[command(after_help = "Examples:\n  canvas outcome list --course 42\n  canvas outcome create --course 42 --group 9 --title \"Outcome\" --description \"Readable\" --mastery-points 3\n  canvas outcome update --outcome 7 --title \"Outcome\" --mastery-points 4\n  canvas outcome delete --course 42 --group 9 --outcome 7 --confirm")]
+    Outcome {
+        #[command(subcommand)]
+        command: OutcomeCommand,
+    },
+    /// Rubric-related operations
+    #[command(after_help = "Examples:\n  canvas rubric list --course 42\n  canvas rubric create --course 42 --title \"Essay Rubric\" --criteria-json \"[{\\\"description\\\":\\\"Clarity\\\",\\\"points\\\":5}]\"\n  canvas rubric update --course 42 --rubric 7 --title \"Updated\"\n  canvas rubric delete --course 42 --rubric 7 --confirm\n  canvas rubric attach --course 42 --rubric 7 --assignment 10 --grading rubric --confirm\n  canvas rubric detach --course 42 --association 5 --confirm")]
+    Rubric {
+        #[command(subcommand)]
+        command: RubricCommand,
+    },
     /// Submission-related operations
     #[command(after_help = "Examples:\n  canvas submission list --course 42 --assignment 7\n  canvas submission grade --course 42 --assignment 7 --user 99 --score 18 --confirm\n  canvas submission import --course 42 --assignment 7 --format csv --file grades.csv --confirm")]
     Submission {
@@ -91,6 +106,18 @@ enum Command {
         #[command(subcommand)]
         command: QuizCommand,
     },
+    /// Question bank operations
+    #[command(after_help = "Examples:\n  canvas question-bank list --course 42\n  canvas question-bank create --course 42 --title \"Chapter 1\"\n  canvas question-bank update --course 42 --bank 9 --title \"Updated Bank\"\n  canvas question-bank delete --course 42 --bank 9 --confirm")]
+    QuestionBank {
+        #[command(subcommand)]
+        command: QuestionBankCommand,
+    },
+    /// Question operations
+    #[command(after_help = "Examples:\n  canvas question list --bank 9\n  canvas question create --bank 9 --text \"What is 2+2?\" --type multiple_choice\n  canvas question create --bank 9 --question-file question.json\n  canvas question update --bank 9 --question 4 --text \"Updated\" --type essay\n  canvas question delete --bank 9 --question 4 --confirm")]
+    Question {
+        #[command(subcommand)]
+        command: QuestionCommand,
+    },
     /// Page-related operations
     #[command(after_help = "Examples:\n  canvas page list --course 42\n  canvas page create --course 42 --title \"Week 1\" --body \"Welcome\" --publish-state published\n  canvas page update --course 42 --page \"week-1\" --body \"Updated\" --publish-state unpublished\n  canvas page publish --course 42 --page \"week-1\" --publish-state published")]
     Page {
@@ -102,6 +129,18 @@ enum Command {
     Module {
         #[command(subcommand)]
         command: ModuleCommand,
+    },
+    /// External tool operations
+    #[command(after_help = "Examples:\n  canvas tool list --course 42\n  canvas tool create --course 42 --name \"Homework\" --config-url https://example.com/config.xml\n  canvas tool update --course 42 --tool 7 --name \"Updated Tool\" --config-file tool.json\n  canvas tool delete --course 42 --tool 7 --confirm")]
+    Tool {
+        #[command(subcommand)]
+        command: ToolCommand,
+    },
+    /// Calendar event operations
+    #[command(after_help = "Examples:\n  canvas calendar list --course 42\n  canvas calendar list --section 10\n  canvas calendar create --course 42 --title \"Office Hours\" --start-at 2025-01-10T15:00:00-05:00 --end-at 2025-01-10T16:00:00-05:00\n  canvas calendar create --section 10 --title \"Holiday\" --all-day-date 2025-01-15\n  canvas calendar update --event 7 --title \"New Time\" --start-at 2025-01-10T16:00:00-05:00\n  canvas calendar delete --event 7 --confirm")]
+    Calendar {
+        #[command(subcommand)]
+        command: CalendarCommand,
     },
     /// File-related operations
     #[command(after_help = "Examples:\n  canvas file list --course 42\n  canvas file upload --course 42 --file syllabus.pdf\n  canvas file delete --file 100 --confirm")]
@@ -262,6 +301,149 @@ enum AssignmentCommand {
         /// Assignment id
         #[arg(long)]
         assignment: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum OutcomeCommand {
+    /// List outcomes for a course
+    List {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+    },
+    /// Create an outcome in an outcome group
+    Create {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Outcome group id
+        #[arg(long)]
+        group: String,
+        /// Outcome title
+        #[arg(long)]
+        title: String,
+        /// Outcome description
+        #[arg(long)]
+        description: Option<String>,
+        /// Points possible
+        #[arg(long = "points-possible")]
+        points_possible: Option<String>,
+        /// Mastery points
+        #[arg(long = "mastery-points")]
+        mastery_points: Option<String>,
+    },
+    /// Update an outcome
+    Update {
+        /// Outcome id
+        #[arg(long)]
+        outcome: String,
+        /// Outcome title
+        #[arg(long)]
+        title: Option<String>,
+        /// Outcome description
+        #[arg(long)]
+        description: Option<String>,
+        /// Points possible
+        #[arg(long = "points-possible")]
+        points_possible: Option<String>,
+        /// Mastery points
+        #[arg(long = "mastery-points")]
+        mastery_points: Option<String>,
+    },
+    /// Delete an outcome
+    Delete {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Outcome group id
+        #[arg(long)]
+        group: String,
+        /// Outcome id
+        #[arg(long)]
+        outcome: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum RubricCommand {
+    /// List rubrics for a course
+    List {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+    },
+    /// Create a rubric
+    Create {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Rubric title
+        #[arg(long)]
+        title: String,
+        /// Rubric criteria JSON array
+        #[arg(long = "criteria-json")]
+        criteria_json: Option<String>,
+        /// Rubric criteria JSON file path
+        #[arg(long = "criteria-file")]
+        criteria_file: Option<PathBuf>,
+    },
+    /// Update a rubric
+    Update {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Rubric id
+        #[arg(long)]
+        rubric: String,
+        /// Rubric title
+        #[arg(long)]
+        title: Option<String>,
+        /// Rubric criteria JSON array
+        #[arg(long = "criteria-json")]
+        criteria_json: Option<String>,
+        /// Rubric criteria JSON file path
+        #[arg(long = "criteria-file")]
+        criteria_file: Option<PathBuf>,
+    },
+    /// Delete a rubric
+    Delete {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Rubric id
+        #[arg(long)]
+        rubric: String,
+    },
+    /// Attach a rubric to an assignment or outcome
+    Attach {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Rubric id
+        #[arg(long)]
+        rubric: String,
+        /// Assignment id
+        #[arg(long)]
+        assignment: Option<String>,
+        /// Outcome id
+        #[arg(long)]
+        outcome: Option<String>,
+        /// Rubric grading selection (rubric or none)
+        #[arg(long)]
+        grading: String,
+        /// Association title override
+        #[arg(long)]
+        title: Option<String>,
+    },
+    /// Detach a rubric association
+    Detach {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Rubric association id
+        #[arg(long)]
+        association: String,
     },
 }
 
@@ -442,6 +624,146 @@ enum QuizSubmissionCommand {
 }
 
 #[derive(Debug, Subcommand)]
+enum QuestionBankCommand {
+    /// List question banks for a course
+    List {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+    },
+    /// Create a question bank
+    Create {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Question bank title
+        #[arg(long)]
+        title: Option<String>,
+        /// Question bank JSON payload
+        #[arg(long = "bank-json")]
+        bank_json: Option<String>,
+        /// Question bank JSON file path
+        #[arg(long = "bank-file")]
+        bank_file: Option<PathBuf>,
+    },
+    /// Update a question bank
+    Update {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Question bank id
+        #[arg(long = "bank")]
+        bank: String,
+        /// Question bank title
+        #[arg(long)]
+        title: Option<String>,
+        /// Question bank JSON payload
+        #[arg(long = "bank-json")]
+        bank_json: Option<String>,
+        /// Question bank JSON file path
+        #[arg(long = "bank-file")]
+        bank_file: Option<PathBuf>,
+    },
+    /// Delete a question bank
+    Delete {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Question bank id
+        #[arg(long = "bank")]
+        bank: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum QuestionCommand {
+    /// List questions in a bank
+    List {
+        /// Question bank id
+        #[arg(long = "bank")]
+        bank: String,
+    },
+    /// Create a question in a bank
+    Create {
+        /// Question bank id
+        #[arg(long = "bank")]
+        bank: String,
+        /// Question name
+        #[arg(long)]
+        name: Option<String>,
+        /// Question text
+        #[arg(long)]
+        text: Option<String>,
+        /// Question type (multiple_choice, essay, etc.)
+        #[arg(long = "type")]
+        question_type: Option<String>,
+        /// Points possible
+        #[arg(long)]
+        points: Option<String>,
+        /// Correct answer comments
+        #[arg(long = "correct-comments")]
+        correct_comments: Option<String>,
+        /// Incorrect answer comments
+        #[arg(long = "incorrect-comments")]
+        incorrect_comments: Option<String>,
+        /// Neutral answer comments
+        #[arg(long = "neutral-comments")]
+        neutral_comments: Option<String>,
+        /// Question JSON payload
+        #[arg(long = "question-json")]
+        question_json: Option<String>,
+        /// Question JSON file path
+        #[arg(long = "question-file")]
+        question_file: Option<PathBuf>,
+    },
+    /// Update a question in a bank
+    Update {
+        /// Question bank id
+        #[arg(long = "bank")]
+        bank: String,
+        /// Question id
+        #[arg(long = "question")]
+        question: String,
+        /// Question name
+        #[arg(long)]
+        name: Option<String>,
+        /// Question text
+        #[arg(long)]
+        text: Option<String>,
+        /// Question type (multiple_choice, essay, etc.)
+        #[arg(long = "type")]
+        question_type: Option<String>,
+        /// Points possible
+        #[arg(long)]
+        points: Option<String>,
+        /// Correct answer comments
+        #[arg(long = "correct-comments")]
+        correct_comments: Option<String>,
+        /// Incorrect answer comments
+        #[arg(long = "incorrect-comments")]
+        incorrect_comments: Option<String>,
+        /// Neutral answer comments
+        #[arg(long = "neutral-comments")]
+        neutral_comments: Option<String>,
+        /// Question JSON payload
+        #[arg(long = "question-json")]
+        question_json: Option<String>,
+        /// Question JSON file path
+        #[arg(long = "question-file")]
+        question_file: Option<PathBuf>,
+    },
+    /// Delete a question in a bank
+    Delete {
+        /// Question bank id
+        #[arg(long = "bank")]
+        bank: String,
+        /// Question id
+        #[arg(long = "question")]
+        question: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
 enum PageCommand {
     /// List pages for a course
     List {
@@ -551,6 +873,146 @@ enum ModuleCommand {
         /// Publish state (published, unpublished)
         #[arg(long = "publish-state")]
         publish_state: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ToolCommand {
+    /// List external tools for a course
+    List {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+    },
+    /// Create an external tool
+    Create {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Tool name
+        #[arg(long)]
+        name: String,
+        /// Tool config URL
+        #[arg(long = "config-url")]
+        config_url: Option<String>,
+        /// Tool config JSON
+        #[arg(long = "config-json")]
+        config_json: Option<String>,
+        /// Tool config XML
+        #[arg(long = "config-xml")]
+        config_xml: Option<String>,
+        /// Tool config file path (.json or .xml)
+        #[arg(long = "config-file")]
+        config_file: Option<PathBuf>,
+        /// Tool placement (repeatable)
+        #[arg(long = "placement")]
+        placement: Vec<String>,
+        /// Placement settings JSON
+        #[arg(long = "placements-json")]
+        placements_json: Option<String>,
+        /// Placement settings JSON file path
+        #[arg(long = "placements-file")]
+        placements_file: Option<PathBuf>,
+    },
+    /// Update an external tool
+    Update {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Tool id
+        #[arg(long)]
+        tool: String,
+        /// Tool name
+        #[arg(long)]
+        name: Option<String>,
+        /// Tool config URL
+        #[arg(long = "config-url")]
+        config_url: Option<String>,
+        /// Tool config JSON
+        #[arg(long = "config-json")]
+        config_json: Option<String>,
+        /// Tool config XML
+        #[arg(long = "config-xml")]
+        config_xml: Option<String>,
+        /// Tool config file path (.json or .xml)
+        #[arg(long = "config-file")]
+        config_file: Option<PathBuf>,
+        /// Tool placement (repeatable)
+        #[arg(long = "placement")]
+        placement: Vec<String>,
+        /// Placement settings JSON
+        #[arg(long = "placements-json")]
+        placements_json: Option<String>,
+        /// Placement settings JSON file path
+        #[arg(long = "placements-file")]
+        placements_file: Option<PathBuf>,
+    },
+    /// Delete an external tool
+    Delete {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Tool id
+        #[arg(long)]
+        tool: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum CalendarCommand {
+    /// List calendar events
+    List {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Section id override
+        #[arg(long)]
+        section: Option<String>,
+    },
+    /// Create a calendar event
+    Create {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Section id override
+        #[arg(long)]
+        section: Option<String>,
+        /// Event title
+        #[arg(long)]
+        title: String,
+        /// Event start time (RFC3339)
+        #[arg(long = "start-at")]
+        start_at: Option<String>,
+        /// Event end time (RFC3339)
+        #[arg(long = "end-at")]
+        end_at: Option<String>,
+        /// All-day date (YYYY-MM-DD)
+        #[arg(long = "all-day-date")]
+        all_day_date: Option<String>,
+    },
+    /// Update a calendar event
+    Update {
+        /// Event id
+        #[arg(long = "event")]
+        event_id: String,
+        /// Event title
+        #[arg(long)]
+        title: Option<String>,
+        /// Event start time (RFC3339)
+        #[arg(long = "start-at")]
+        start_at: Option<String>,
+        /// Event end time (RFC3339)
+        #[arg(long = "end-at")]
+        end_at: Option<String>,
+        /// All-day date (YYYY-MM-DD)
+        #[arg(long = "all-day-date")]
+        all_day_date: Option<String>,
+    },
+    /// Delete a calendar event
+    Delete {
+        /// Event id
+        #[arg(long = "event")]
+        event_id: String,
     },
 }
 
@@ -812,6 +1274,114 @@ enum AssignmentRequest {
 }
 
 #[derive(Debug)]
+struct OutcomeListRequest {
+    course_id: CourseId,
+}
+
+#[derive(Debug)]
+struct OutcomeCreateRequest {
+    course_id: CourseId,
+    outcome_group_id: OutcomeGroupId,
+    input: canvas_core::OutcomeCreateInput,
+}
+
+#[derive(Debug)]
+struct OutcomeUpdateRequest {
+    outcome_id: OutcomeId,
+    input: canvas_core::OutcomeUpdateInput,
+}
+
+#[derive(Debug)]
+struct OutcomeDeleteRequest {
+    course_id: CourseId,
+    outcome_group_id: OutcomeGroupId,
+    outcome_id: OutcomeId,
+}
+
+#[derive(Debug)]
+enum OutcomeRequest {
+    List(OutcomeListRequest),
+    Create(OutcomeCreateRequest),
+    Update(OutcomeUpdateRequest),
+    Delete(OutcomeDeleteRequest),
+}
+
+#[derive(Debug)]
+struct RubricListRequest {
+    course_id: CourseId,
+}
+
+#[derive(Debug)]
+struct RubricCreateRequest {
+    course_id: CourseId,
+    input: canvas_core::RubricCreateInput,
+}
+
+#[derive(Debug)]
+struct RubricUpdateRequest {
+    course_id: CourseId,
+    rubric_id: RubricId,
+    input: canvas_core::RubricUpdateInput,
+}
+
+#[derive(Debug)]
+struct RubricDeleteRequest {
+    course_id: CourseId,
+    rubric_id: RubricId,
+}
+
+#[derive(Debug)]
+struct RubricAttachRequest {
+    course_id: CourseId,
+    input: canvas_core::RubricAssociationInput,
+}
+
+#[derive(Debug)]
+struct RubricDetachRequest {
+    course_id: CourseId,
+    rubric_association_id: RubricAssociationId,
+}
+
+#[derive(Debug)]
+enum RubricRequest {
+    List(RubricListRequest),
+    Create(RubricCreateRequest),
+    Update(RubricUpdateRequest),
+    Delete(RubricDeleteRequest),
+    Attach(RubricAttachRequest),
+    Detach(RubricDetachRequest),
+}
+
+#[derive(Debug)]
+struct CalendarEventListRequest {
+    context: CalendarEventContext,
+}
+
+#[derive(Debug)]
+struct CalendarEventCreateRequest {
+    input: canvas_core::CalendarEventCreateInput,
+}
+
+#[derive(Debug)]
+struct CalendarEventUpdateRequest {
+    event_id: CalendarEventId,
+    input: canvas_core::CalendarEventUpdateInput,
+}
+
+#[derive(Debug)]
+struct CalendarEventDeleteRequest {
+    event_id: CalendarEventId,
+}
+
+#[derive(Debug)]
+enum CalendarEventRequest {
+    List(CalendarEventListRequest),
+    Create(CalendarEventCreateRequest),
+    Update(CalendarEventUpdateRequest),
+    Delete(CalendarEventDeleteRequest),
+}
+
+#[derive(Debug)]
 struct SubmissionListRequest {
     course_id: CourseId,
     assignment_id: AssignmentId,
@@ -902,6 +1472,60 @@ enum QuizSubmissionRequest {
     Grade(QuizSubmissionGradeRequest),
 }
 
+struct QuestionBankListRequest {
+    course_id: CourseId,
+}
+
+struct QuestionBankCreateRequest {
+    course_id: CourseId,
+    input: canvas_core::QuestionBankCreateInput,
+}
+
+struct QuestionBankUpdateRequest {
+    course_id: CourseId,
+    bank_id: QuestionBankId,
+    input: canvas_core::QuestionBankUpdateInput,
+}
+
+struct QuestionBankDeleteRequest {
+    course_id: CourseId,
+    bank_id: QuestionBankId,
+}
+
+enum QuestionBankRequest {
+    List(QuestionBankListRequest),
+    Create(QuestionBankCreateRequest),
+    Update(QuestionBankUpdateRequest),
+    Delete(QuestionBankDeleteRequest),
+}
+
+struct QuestionListRequest {
+    bank_id: QuestionBankId,
+}
+
+struct QuestionCreateRequest {
+    bank_id: QuestionBankId,
+    input: canvas_core::QuestionCreateInput,
+}
+
+struct QuestionUpdateRequest {
+    bank_id: QuestionBankId,
+    question_id: QuestionId,
+    input: canvas_core::QuestionUpdateInput,
+}
+
+struct QuestionDeleteRequest {
+    bank_id: QuestionBankId,
+    question_id: QuestionId,
+}
+
+enum QuestionRequest {
+    List(QuestionListRequest),
+    Create(QuestionCreateRequest),
+    Update(QuestionUpdateRequest),
+    Delete(QuestionDeleteRequest),
+}
+
 #[derive(Debug)]
 struct PageListRequest {
     course_id: CourseId,
@@ -973,6 +1597,44 @@ enum ModuleRequest {
     Update(ModuleUpdateRequest),
     Reorder(ModuleReorderRequest),
     Publish(ModulePublishRequest),
+}
+
+#[derive(Debug)]
+struct ToolListRequest {
+    course_id: CourseId,
+}
+
+#[derive(Debug)]
+struct ToolCreateRequest {
+    course_id: CourseId,
+    name: canvas_models::ExternalToolName,
+    config: canvas_core::ExternalToolConfig,
+    placements: Option<canvas_core::ExternalToolPlacementList>,
+    placement_settings: Option<canvas_core::ExternalToolPlacementSettings>,
+}
+
+#[derive(Debug)]
+struct ToolUpdateRequest {
+    course_id: CourseId,
+    tool_id: canvas_models::ExternalToolId,
+    name: Option<canvas_models::ExternalToolName>,
+    config: Option<canvas_core::ExternalToolConfig>,
+    placements: Option<canvas_core::ExternalToolPlacementList>,
+    placement_settings: Option<canvas_core::ExternalToolPlacementSettings>,
+}
+
+#[derive(Debug)]
+struct ToolDeleteRequest {
+    course_id: CourseId,
+    tool_id: canvas_models::ExternalToolId,
+}
+
+#[derive(Debug)]
+enum ToolRequest {
+    List(ToolListRequest),
+    Create(ToolCreateRequest),
+    Update(ToolUpdateRequest),
+    Delete(ToolDeleteRequest),
 }
 
 #[derive(Debug)]
@@ -1199,6 +1861,14 @@ fn run(cli: Cli) -> Result<(), CliError> {
             let request = AssignmentRequest::try_from((command, &global))?;
             handle_assignment(request, &global)
         }
+        Command::Outcome { command } => {
+            let request = OutcomeRequest::try_from((command, &global))?;
+            handle_outcome(request, &global)
+        }
+        Command::Rubric { command } => {
+            let request = RubricRequest::try_from((command, &global))?;
+            handle_rubric(request, &global)
+        }
         Command::Submission { command } => {
             let request = SubmissionRequest::try_from((command, &global))?;
             handle_submission(request, &global)
@@ -1207,6 +1877,14 @@ fn run(cli: Cli) -> Result<(), CliError> {
             let request = QuizRequest::try_from((command, &global))?;
             handle_quiz(request, &global)
         }
+        Command::QuestionBank { command } => {
+            let request = QuestionBankRequest::try_from((command, &global))?;
+            handle_question_bank(request, &global)
+        }
+        Command::Question { command } => {
+            let request = QuestionRequest::try_from((command, &global))?;
+            handle_question(request, &global)
+        }
         Command::Page { command } => {
             let request = PageRequest::try_from((command, &global))?;
             handle_page(request, &global)
@@ -1214,6 +1892,14 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Command::Module { command } => {
             let request = ModuleRequest::try_from((command, &global))?;
             handle_module(request, &global)
+        }
+        Command::Tool { command } => {
+            let request = ToolRequest::try_from((command, &global))?;
+            handle_tool(request, &global)
+        }
+        Command::Calendar { command } => {
+            let request = CalendarEventRequest::try_from((command, &global))?;
+            handle_calendar_event(request, &global)
         }
         Command::File { command } => {
             let request = FileRequest::try_from((command, &global))?;
@@ -1523,6 +2209,302 @@ fn handle_assignment(
             );
             if !global.quiet && !global.json {
                 println!("Assignment {} deleted.", assignment.id);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn handle_outcome(
+    request: OutcomeRequest,
+    global: &GlobalOptions,
+) -> Result<(), CliError> {
+    match request {
+        OutcomeRequest::List(request) => {
+            let planned = vec![PlannedAction {
+                action: "list outcomes",
+                risk: "none",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("outcome list", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let outcomes = canvas_core::list_outcomes(&config, request.course_id)?;
+            let data = json!({
+                "status": "ok",
+                "course_id": request.course_id.get(),
+                "outcomes": outcomes.iter().map(outcome_summary_json).collect::<Vec<_>>(),
+            });
+            emit_result("outcome list", data, global);
+            if !global.quiet && !global.json {
+                println!("Found {} outcomes.", outcomes.len());
+            }
+        }
+        OutcomeRequest::Create(request) => {
+            let planned = vec![PlannedAction {
+                action: "create outcome",
+                risk: "creates remote outcome",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("outcome create", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let outcome = canvas_core::create_outcome(
+                &config,
+                request.course_id,
+                request.outcome_group_id,
+                &request.input,
+            )?;
+            emit_result(
+                "outcome create",
+                json!({
+                    "status": "created",
+                    "course_id": request.course_id.get(),
+                    "outcome_group_id": request.outcome_group_id.get(),
+                    "outcome": outcome_summary_json(&outcome),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Outcome {} created.", outcome.id);
+            }
+        }
+        OutcomeRequest::Update(request) => {
+            let planned = vec![PlannedAction {
+                action: "update outcome",
+                risk: "updates remote outcome",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("outcome update", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let outcome = canvas_core::update_outcome(
+                &config,
+                request.outcome_id,
+                &request.input,
+            )?;
+            emit_result(
+                "outcome update",
+                json!({
+                    "status": "updated",
+                    "outcome": outcome_summary_json(&outcome),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Outcome {} updated.", outcome.id);
+            }
+        }
+        OutcomeRequest::Delete(request) => {
+            let planned = vec![PlannedAction {
+                action: "delete outcome",
+                risk: "deletes remote outcome",
+                requires_confirmation: true,
+            }];
+            if global.explain {
+                emit_plan("outcome delete", &planned, global);
+                return Ok(());
+            }
+            require_confirmation(global, "outcome delete")?;
+            let config = canvas_core::load_merged_config()?;
+            let outcome = canvas_core::delete_outcome(
+                &config,
+                request.course_id,
+                request.outcome_group_id,
+                request.outcome_id,
+            )?;
+            emit_result(
+                "outcome delete",
+                json!({
+                    "status": "deleted",
+                    "course_id": request.course_id.get(),
+                    "outcome_group_id": request.outcome_group_id.get(),
+                    "outcome": outcome_summary_json(&outcome),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Outcome {} deleted.", outcome.id);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn handle_rubric(
+    request: RubricRequest,
+    global: &GlobalOptions,
+) -> Result<(), CliError> {
+    match request {
+        RubricRequest::List(request) => {
+            let planned = vec![PlannedAction {
+                action: "list rubrics",
+                risk: "none",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("rubric list", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let rubrics = canvas_core::list_rubrics(&config, request.course_id)?;
+            let data = json!({
+                "status": "ok",
+                "course_id": request.course_id.get(),
+                "rubrics": rubrics.iter().map(rubric_summary_json).collect::<Vec<_>>(),
+            });
+            emit_result("rubric list", data, global);
+            if !global.quiet && !global.json {
+                println!("Found {} rubrics.", rubrics.len());
+            }
+        }
+        RubricRequest::Create(request) => {
+            let planned = vec![PlannedAction {
+                action: "create rubric",
+                risk: "creates remote rubric",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("rubric create", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let rubric =
+                canvas_core::create_rubric(&config, request.course_id, &request.input)?;
+            emit_result(
+                "rubric create",
+                json!({
+                    "status": "created",
+                    "course_id": request.course_id.get(),
+                    "rubric": rubric_summary_json(&rubric),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Rubric {} created.", rubric.id);
+            }
+        }
+        RubricRequest::Update(request) => {
+            let planned = vec![PlannedAction {
+                action: "update rubric",
+                risk: "updates remote rubric",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("rubric update", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let rubric = canvas_core::update_rubric(
+                &config,
+                request.course_id,
+                request.rubric_id,
+                &request.input,
+            )?;
+            emit_result(
+                "rubric update",
+                json!({
+                    "status": "updated",
+                    "course_id": request.course_id.get(),
+                    "rubric": rubric_summary_json(&rubric),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Rubric {} updated.", rubric.id);
+            }
+        }
+        RubricRequest::Delete(request) => {
+            let planned = vec![PlannedAction {
+                action: "delete rubric",
+                risk: "deletes remote rubric",
+                requires_confirmation: true,
+            }];
+            if global.explain {
+                emit_plan("rubric delete", &planned, global);
+                return Ok(());
+            }
+            require_confirmation(global, "rubric delete")?;
+            let config = canvas_core::load_merged_config()?;
+            let rubric = canvas_core::delete_rubric(
+                &config,
+                request.course_id,
+                request.rubric_id,
+            )?;
+            emit_result(
+                "rubric delete",
+                json!({
+                    "status": "deleted",
+                    "course_id": request.course_id.get(),
+                    "rubric": rubric_summary_json(&rubric),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Rubric {} deleted.", rubric.id);
+            }
+        }
+        RubricRequest::Attach(request) => {
+            let planned = vec![PlannedAction {
+                action: "attach rubric",
+                risk: "attaches rubric to target",
+                requires_confirmation: true,
+            }];
+            if global.explain {
+                emit_plan("rubric attach", &planned, global);
+                return Ok(());
+            }
+            require_confirmation(global, "rubric attach")?;
+            let config = canvas_core::load_merged_config()?;
+            let association =
+                canvas_core::attach_rubric(&config, request.course_id, &request.input)?;
+            emit_result(
+                "rubric attach",
+                json!({
+                    "status": "attached",
+                    "course_id": request.course_id.get(),
+                    "rubric_association": rubric_association_summary_json(&association),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Rubric association {} attached.", association.id);
+            }
+        }
+        RubricRequest::Detach(request) => {
+            let planned = vec![PlannedAction {
+                action: "detach rubric",
+                risk: "detaches rubric association",
+                requires_confirmation: true,
+            }];
+            if global.explain {
+                emit_plan("rubric detach", &planned, global);
+                return Ok(());
+            }
+            require_confirmation(global, "rubric detach")?;
+            let config = canvas_core::load_merged_config()?;
+            let association = canvas_core::detach_rubric(
+                &config,
+                request.course_id,
+                request.rubric_association_id,
+            )?;
+            emit_result(
+                "rubric detach",
+                json!({
+                    "status": "detached",
+                    "course_id": request.course_id.get(),
+                    "rubric_association": rubric_association_summary_json(&association),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Rubric association {} detached.", association.id);
             }
         }
     }
@@ -1960,6 +2942,243 @@ fn handle_quiz_submission(
     Ok(())
 }
 
+fn handle_question_bank(
+    request: QuestionBankRequest,
+    global: &GlobalOptions,
+) -> Result<(), CliError> {
+    match request {
+        QuestionBankRequest::List(request) => {
+            let planned = vec![PlannedAction {
+                action: "list question banks",
+                risk: "none",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("question bank list", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let banks = canvas_core::list_question_banks(&config, request.course_id)?;
+            let data = json!({
+                "status": "ok",
+                "course_id": request.course_id.get(),
+                "question_banks": banks
+                    .iter()
+                    .map(question_bank_summary_json)
+                    .collect::<Vec<_>>(),
+            });
+            emit_result("question bank list", data, global);
+            if !global.quiet && !global.json {
+                println!("Found {} question banks.", banks.len());
+            }
+        }
+        QuestionBankRequest::Create(request) => {
+            let planned = vec![PlannedAction {
+                action: "create question bank",
+                risk: "creates remote question bank",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("question bank create", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let bank =
+                canvas_core::create_question_bank(&config, request.course_id, &request.input)?;
+            emit_result(
+                "question bank create",
+                json!({
+                    "status": "ok",
+                    "course_id": request.course_id.get(),
+                    "question_bank": question_bank_summary_json(&bank),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Question bank {} created.", bank.id);
+            }
+        }
+        QuestionBankRequest::Update(request) => {
+            let planned = vec![PlannedAction {
+                action: "update question bank",
+                risk: "updates remote question bank",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("question bank update", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let bank = canvas_core::update_question_bank(
+                &config,
+                request.course_id,
+                request.bank_id,
+                &request.input,
+            )?;
+            emit_result(
+                "question bank update",
+                json!({
+                    "status": "ok",
+                    "course_id": request.course_id.get(),
+                    "question_bank": question_bank_summary_json(&bank),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Question bank {} updated.", bank.id);
+            }
+        }
+        QuestionBankRequest::Delete(request) => {
+            let planned = vec![PlannedAction {
+                action: "delete question bank",
+                risk: "deletes remote question bank",
+                requires_confirmation: true,
+            }];
+            if global.explain {
+                emit_plan("question bank delete", &planned, global);
+                return Ok(());
+            }
+            require_confirmation(global, "question bank delete")?;
+            let config = canvas_core::load_merged_config()?;
+            let bank = canvas_core::delete_question_bank(
+                &config,
+                request.course_id,
+                request.bank_id,
+            )?;
+            emit_result(
+                "question bank delete",
+                json!({
+                    "status": "ok",
+                    "course_id": request.course_id.get(),
+                    "question_bank": question_bank_summary_json(&bank),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Question bank {} deleted.", bank.id);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn handle_question(request: QuestionRequest, global: &GlobalOptions) -> Result<(), CliError> {
+    match request {
+        QuestionRequest::List(request) => {
+            let planned = vec![PlannedAction {
+                action: "list questions",
+                risk: "none",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("question list", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let questions = canvas_core::list_questions(&config, request.bank_id)?;
+            let data = json!({
+                "status": "ok",
+                "bank_id": request.bank_id.get(),
+                "questions": questions
+                    .iter()
+                    .map(question_summary_json)
+                    .collect::<Vec<_>>(),
+            });
+            emit_result("question list", data, global);
+            if !global.quiet && !global.json {
+                println!("Found {} questions.", questions.len());
+            }
+        }
+        QuestionRequest::Create(request) => {
+            let planned = vec![PlannedAction {
+                action: "create question",
+                risk: "creates remote question",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("question create", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let question =
+                canvas_core::create_question(&config, request.bank_id, &request.input)?;
+            emit_result(
+                "question create",
+                json!({
+                    "status": "ok",
+                    "bank_id": request.bank_id.get(),
+                    "question": question_summary_json(&question),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Question {} created.", question.id);
+            }
+        }
+        QuestionRequest::Update(request) => {
+            let planned = vec![PlannedAction {
+                action: "update question",
+                risk: "updates remote question",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("question update", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let question = canvas_core::update_question(
+                &config,
+                request.bank_id,
+                request.question_id,
+                &request.input,
+            )?;
+            emit_result(
+                "question update",
+                json!({
+                    "status": "ok",
+                    "bank_id": request.bank_id.get(),
+                    "question": question_summary_json(&question),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Question {} updated.", question.id);
+            }
+        }
+        QuestionRequest::Delete(request) => {
+            let planned = vec![PlannedAction {
+                action: "delete question",
+                risk: "deletes remote question",
+                requires_confirmation: true,
+            }];
+            if global.explain {
+                emit_plan("question delete", &planned, global);
+                return Ok(());
+            }
+            require_confirmation(global, "question delete")?;
+            let config = canvas_core::load_merged_config()?;
+            let question = canvas_core::delete_question(
+                &config,
+                request.bank_id,
+                request.question_id,
+            )?;
+            emit_result(
+                "question delete",
+                json!({
+                    "status": "ok",
+                    "bank_id": request.bank_id.get(),
+                    "question": question_summary_json(&question),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Question {} deleted.", question.id);
+            }
+        }
+    }
+    Ok(())
+}
+
 fn handle_page(request: PageRequest, global: &GlobalOptions) -> Result<(), CliError> {
     match request {
         PageRequest::List(request) => {
@@ -2217,6 +3436,254 @@ fn handle_module(request: ModuleRequest, global: &GlobalOptions) -> Result<(), C
             );
             if !global.quiet && !global.json {
                 println!("Module publish state updated.");
+            }
+        }
+    }
+    Ok(())
+}
+
+fn handle_tool(request: ToolRequest, global: &GlobalOptions) -> Result<(), CliError> {
+    match request {
+        ToolRequest::List(request) => {
+            let planned = vec![PlannedAction {
+                action: "list external tools",
+                risk: "none",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("tool list", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let tools = canvas_core::list_external_tools(&config, request.course_id)?;
+            let data = json!({
+                "status": "ok",
+                "course_id": request.course_id.get(),
+                "tools": tools.iter().map(external_tool_summary_json).collect::<Vec<_>>(),
+            });
+            emit_result("tool list", data, global);
+            if !global.quiet && !global.json {
+                println!("Found {} tools.", tools.len());
+            }
+        }
+        ToolRequest::Create(request) => {
+            let planned = vec![PlannedAction {
+                action: "create external tool",
+                risk: "creates remote external tool",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("tool create", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let input = canvas_core::ExternalToolCreateInput {
+                name: request.name,
+                config: request.config,
+                placements: request.placements,
+                placement_settings: request.placement_settings,
+            };
+            let tool =
+                canvas_core::create_external_tool(&config, request.course_id, &input)?;
+            emit_result(
+                "tool create",
+                json!({
+                    "status": "created",
+                    "course_id": request.course_id.get(),
+                    "tool": external_tool_summary_json(&tool),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("External tool created.");
+            }
+        }
+        ToolRequest::Update(request) => {
+            let planned = vec![PlannedAction {
+                action: "update external tool",
+                risk: "updates remote external tool",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("tool update", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let input = canvas_core::ExternalToolUpdateInput::new(
+                request.name,
+                request.config,
+                request.placements,
+                request.placement_settings,
+            )
+            .map_err(|_| {
+                CliError::Canvas(canvas_core::CanvasError::InvalidExternalToolUpdate(
+                    "missing_fields".to_string(),
+                ))
+            })?;
+            let tool = canvas_core::update_external_tool(
+                &config,
+                request.course_id,
+                request.tool_id,
+                &input,
+            )?;
+            emit_result(
+                "tool update",
+                json!({
+                    "status": "updated",
+                    "course_id": request.course_id.get(),
+                    "tool": external_tool_summary_json(&tool),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("External tool updated.");
+            }
+        }
+        ToolRequest::Delete(request) => {
+            let planned = vec![PlannedAction {
+                action: "delete external tool",
+                risk: "deletes remote external tool",
+                requires_confirmation: true,
+            }];
+            if global.explain {
+                emit_plan("tool delete", &planned, global);
+                return Ok(());
+            }
+            require_confirmation(global, "tool delete")?;
+            let config = canvas_core::load_merged_config()?;
+            let tool = canvas_core::delete_external_tool(
+                &config,
+                request.course_id,
+                request.tool_id,
+            )?;
+            emit_result(
+                "tool delete",
+                json!({
+                    "status": "deleted",
+                    "course_id": request.course_id.get(),
+                    "tool": external_tool_summary_json(&tool),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("External tool deleted.");
+            }
+        }
+    }
+    Ok(())
+}
+
+fn handle_calendar_event(
+    request: CalendarEventRequest,
+    global: &GlobalOptions,
+) -> Result<(), CliError> {
+    match request {
+        CalendarEventRequest::List(request) => {
+            let planned = vec![PlannedAction {
+                action: "list calendar events",
+                risk: "none",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("calendar list", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let events =
+                canvas_core::list_calendar_events(&config, request.context)?;
+            let data = json!({
+                "status": "ok",
+                "context_type": request.context.context_type(),
+                "context_id": request.context.context_id(),
+                "events": events
+                    .iter()
+                    .map(calendar_event_summary_json)
+                    .collect::<Vec<_>>(),
+            });
+            emit_result("calendar list", data, global);
+            if !global.quiet && !global.json {
+                println!("Found {} calendar events.", events.len());
+            }
+        }
+        CalendarEventRequest::Create(request) => {
+            let planned = vec![PlannedAction {
+                action: "create calendar event",
+                risk: "creates remote calendar event",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("calendar create", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let event =
+                canvas_core::create_calendar_event(&config, &request.input)?;
+            emit_result(
+                "calendar create",
+                json!({
+                    "status": "created",
+                    "event": calendar_event_summary_json(&event),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Calendar event created.");
+            }
+        }
+        CalendarEventRequest::Update(request) => {
+            let planned = vec![PlannedAction {
+                action: "update calendar event",
+                risk: "updates remote calendar event",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("calendar update", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let event = canvas_core::update_calendar_event(
+                &config,
+                request.event_id,
+                &request.input,
+            )?;
+            emit_result(
+                "calendar update",
+                json!({
+                    "status": "updated",
+                    "event": calendar_event_summary_json(&event),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Calendar event updated.");
+            }
+        }
+        CalendarEventRequest::Delete(request) => {
+            let planned = vec![PlannedAction {
+                action: "delete calendar event",
+                risk: "deletes remote calendar event",
+                requires_confirmation: true,
+            }];
+            if global.explain {
+                emit_plan("calendar delete", &planned, global);
+                return Ok(());
+            }
+            require_confirmation(global, "calendar delete")?;
+            let config = canvas_core::load_merged_config()?;
+            let event = canvas_core::delete_calendar_event(
+                &config,
+                request.event_id,
+            )?;
+            emit_result(
+                "calendar delete",
+                json!({
+                    "status": "deleted",
+                    "event": calendar_event_summary_json(&event),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Calendar event deleted.");
             }
         }
     }
@@ -2809,6 +4276,287 @@ fn require_confirmation(global: &GlobalOptions, action: &'static str) -> Result<
     }
 }
 
+fn parse_calendar_timing_for_create(
+    start_at: Option<String>,
+    end_at: Option<String>,
+    all_day_date: Option<String>,
+) -> Result<canvas_core::CalendarEventTiming, CliError> {
+    if all_day_date.is_some() && (start_at.is_some() || end_at.is_some()) {
+        return Err(CliError::Canvas(
+            canvas_core::CanvasError::InvalidCalendarEventCreate(
+                "conflicting_timing".to_string(),
+            ),
+        ));
+    }
+    if let Some(date) = all_day_date {
+        let date = canvas_core::parse_all_day_date(&date)?;
+        return Ok(canvas_core::CalendarEventTiming::AllDay(date));
+    }
+    let start_at = match start_at {
+        Some(value) => value,
+        None => {
+            return Err(CliError::Canvas(
+                canvas_core::CanvasError::InvalidCalendarEventCreate(
+                    "missing_start".to_string(),
+                ),
+            ));
+        }
+    };
+    let start_at = canvas_core::parse_event_date_time(&start_at)?;
+    let end_at = match end_at {
+        Some(value) => Some(canvas_core::parse_event_date_time(&value)?),
+        None => None,
+    };
+    Ok(canvas_core::CalendarEventTiming::Timed { start_at, end_at })
+}
+
+fn parse_calendar_timing_for_update(
+    start_at: Option<String>,
+    end_at: Option<String>,
+    all_day_date: Option<String>,
+) -> Result<Option<canvas_core::CalendarEventTiming>, CliError> {
+    if all_day_date.is_some() && (start_at.is_some() || end_at.is_some()) {
+        return Err(CliError::Canvas(
+            canvas_core::CanvasError::InvalidCalendarEventUpdate(
+                "conflicting_timing".to_string(),
+            ),
+        ));
+    }
+    if let Some(date) = all_day_date {
+        let date = canvas_core::parse_all_day_date(&date)?;
+        return Ok(Some(canvas_core::CalendarEventTiming::AllDay(date)));
+    }
+    if start_at.is_none() && end_at.is_none() {
+        return Ok(None);
+    }
+    let start_at = match start_at {
+        Some(value) => canvas_core::parse_event_date_time(&value)?,
+        None => {
+            return Err(CliError::Canvas(
+                canvas_core::CanvasError::InvalidCalendarEventUpdate(
+                    "missing_start".to_string(),
+                ),
+            ));
+        }
+    };
+    let end_at = match end_at {
+        Some(value) => Some(canvas_core::parse_event_date_time(&value)?),
+        None => None,
+    };
+    Ok(Some(canvas_core::CalendarEventTiming::Timed { start_at, end_at }))
+}
+
+fn parse_question_bank_create_input(
+    title: Option<String>,
+    bank_json: Option<String>,
+    bank_file: Option<PathBuf>,
+) -> Result<canvas_core::QuestionBankCreateInput, CliError> {
+    let sources = [
+        title.is_some(),
+        bank_json.is_some(),
+        bank_file.is_some(),
+    ]
+    .into_iter()
+    .filter(|value| *value)
+    .count();
+    if sources > 1 {
+        return Err(CliError::Canvas(
+            canvas_core::CanvasError::InvalidQuestionBankJson(
+                "multiple_sources".to_string(),
+            ),
+        ));
+    }
+    if let Some(raw) = bank_json {
+        return canvas_core::QuestionBankCreateInput::from_json(&raw)
+            .map_err(CliError::Canvas);
+    }
+    if let Some(path) = bank_file {
+        let raw = read_file_to_string(&path)?;
+        return canvas_core::QuestionBankCreateInput::from_json(&raw)
+            .map_err(CliError::Canvas);
+    }
+    let title = title.ok_or_else(|| {
+        CliError::Canvas(canvas_core::CanvasError::InvalidQuestionBankTitle(
+            "missing".to_string(),
+        ))
+    })?;
+    let title = canvas_core::parse_question_bank_title(&title)?;
+    Ok(canvas_core::QuestionBankCreateInput::new(title))
+}
+
+fn parse_question_bank_update_input(
+    title: Option<String>,
+    bank_json: Option<String>,
+    bank_file: Option<PathBuf>,
+) -> Result<canvas_core::QuestionBankUpdateInput, CliError> {
+    let sources = [
+        title.is_some(),
+        bank_json.is_some(),
+        bank_file.is_some(),
+    ]
+    .into_iter()
+    .filter(|value| *value)
+    .count();
+    if sources > 1 {
+        return Err(CliError::Canvas(
+            canvas_core::CanvasError::InvalidQuestionBankJson(
+                "multiple_sources".to_string(),
+            ),
+        ));
+    }
+    if let Some(raw) = bank_json {
+        return canvas_core::QuestionBankUpdateInput::from_json(&raw)
+            .map_err(CliError::Canvas);
+    }
+    if let Some(path) = bank_file {
+        let raw = read_file_to_string(&path)?;
+        return canvas_core::QuestionBankUpdateInput::from_json(&raw)
+            .map_err(CliError::Canvas);
+    }
+    let title = match title {
+        Some(raw) => Some(canvas_core::parse_question_bank_title(&raw)?),
+        None => None,
+    };
+    canvas_core::QuestionBankUpdateInput::new(title).map_err(CliError::Canvas)
+}
+
+fn parse_question_create_input(
+    name: Option<String>,
+    text: Option<String>,
+    question_type: Option<String>,
+    points: Option<String>,
+    correct_comments: Option<String>,
+    incorrect_comments: Option<String>,
+    neutral_comments: Option<String>,
+    question_json: Option<String>,
+    question_file: Option<PathBuf>,
+) -> Result<canvas_core::QuestionCreateInput, CliError> {
+    let json_sources = [question_json.is_some(), question_file.is_some()]
+        .into_iter()
+        .filter(|value| *value)
+        .count();
+    let has_fields = name.is_some()
+        || text.is_some()
+        || question_type.is_some()
+        || points.is_some()
+        || correct_comments.is_some()
+        || incorrect_comments.is_some()
+        || neutral_comments.is_some();
+    if json_sources > 1 || (json_sources == 1 && has_fields) {
+        return Err(CliError::Canvas(
+            canvas_core::CanvasError::InvalidQuestionJson(
+                "multiple_sources".to_string(),
+            ),
+        ));
+    }
+    if let Some(raw) = question_json {
+        return canvas_core::QuestionCreateInput::from_json(&raw)
+            .map_err(CliError::Canvas);
+    }
+    if let Some(path) = question_file {
+        let raw = read_file_to_string(&path)?;
+        return canvas_core::QuestionCreateInput::from_json(&raw)
+            .map_err(CliError::Canvas);
+    }
+    let text = text.ok_or_else(|| {
+        CliError::Canvas(canvas_core::CanvasError::InvalidQuestionText(
+            "missing".to_string(),
+        ))
+    })?;
+    let question_type = question_type.ok_or_else(|| {
+        CliError::Canvas(canvas_core::CanvasError::InvalidQuestionType(
+            "missing".to_string(),
+        ))
+    })?;
+    let question_name = match name {
+        Some(raw) => Some(canvas_core::parse_question_name(&raw)?),
+        None => None,
+    };
+    let question_text = canvas_core::parse_question_text(&text)?;
+    let question_type = canvas_core::parse_question_type(&question_type)?;
+    let points_possible = match points {
+        Some(raw) => Some(canvas_core::parse_points_possible(&raw)?),
+        None => None,
+    };
+    Ok(canvas_core::QuestionCreateInput::new(
+        question_name,
+        question_text,
+        question_type,
+        points_possible,
+        correct_comments,
+        incorrect_comments,
+        neutral_comments,
+        None,
+    ))
+}
+
+fn parse_question_update_input(
+    name: Option<String>,
+    text: Option<String>,
+    question_type: Option<String>,
+    points: Option<String>,
+    correct_comments: Option<String>,
+    incorrect_comments: Option<String>,
+    neutral_comments: Option<String>,
+    question_json: Option<String>,
+    question_file: Option<PathBuf>,
+) -> Result<canvas_core::QuestionUpdateInput, CliError> {
+    let json_sources = [question_json.is_some(), question_file.is_some()]
+        .into_iter()
+        .filter(|value| *value)
+        .count();
+    let has_fields = name.is_some()
+        || text.is_some()
+        || question_type.is_some()
+        || points.is_some()
+        || correct_comments.is_some()
+        || incorrect_comments.is_some()
+        || neutral_comments.is_some();
+    if json_sources > 1 || (json_sources == 1 && has_fields) {
+        return Err(CliError::Canvas(
+            canvas_core::CanvasError::InvalidQuestionJson(
+                "multiple_sources".to_string(),
+            ),
+        ));
+    }
+    if let Some(raw) = question_json {
+        return canvas_core::QuestionUpdateInput::from_json(&raw)
+            .map_err(CliError::Canvas);
+    }
+    if let Some(path) = question_file {
+        let raw = read_file_to_string(&path)?;
+        return canvas_core::QuestionUpdateInput::from_json(&raw)
+            .map_err(CliError::Canvas);
+    }
+    let question_name = match name {
+        Some(raw) => Some(canvas_core::parse_question_name(&raw)?),
+        None => None,
+    };
+    let question_text = match text {
+        Some(raw) => Some(canvas_core::parse_question_text(&raw)?),
+        None => None,
+    };
+    let question_type = match question_type {
+        Some(raw) => Some(canvas_core::parse_question_type(&raw)?),
+        None => None,
+    };
+    let points_possible = match points {
+        Some(raw) => Some(canvas_core::parse_points_possible(&raw)?),
+        None => None,
+    };
+    canvas_core::QuestionUpdateInput::new(
+        question_name,
+        question_text,
+        question_type,
+        points_possible,
+        correct_comments,
+        incorrect_comments,
+        neutral_comments,
+        None,
+    )
+    .map_err(CliError::Canvas)
+}
+
 fn parse_rubric_input(
     rubric_json: Option<String>,
     rubric_file: Option<PathBuf>,
@@ -2829,6 +4577,131 @@ fn parse_rubric_input(
     };
     let parsed = canvas_core::parse_rubric_assessment(&raw)?;
     Ok(Some(parsed))
+}
+
+fn parse_rubric_criteria_input(
+    criteria_json: Option<String>,
+    criteria_file: Option<PathBuf>,
+) -> Result<Option<canvas_core::RubricCriteria>, CliError> {
+    if criteria_json.is_some() && criteria_file.is_some() {
+        return Err(CliError::Canvas(
+            canvas_core::CanvasError::InvalidRubricCriteria(
+                "multiple_sources".to_string(),
+            ),
+        ));
+    }
+    let raw = if let Some(raw) = criteria_json {
+        raw
+    } else if let Some(path) = criteria_file {
+        read_file_to_string(&path)?
+    } else {
+        return Ok(None);
+    };
+    let parsed = canvas_core::parse_rubric_criteria(&raw)?;
+    Ok(Some(parsed))
+}
+
+fn parse_external_tool_config_input(
+    config_url: Option<String>,
+    config_json: Option<String>,
+    config_xml: Option<String>,
+    config_file: Option<PathBuf>,
+    required: bool,
+) -> Result<Option<canvas_core::ExternalToolConfig>, CliError> {
+    let sources = [
+        config_url.is_some(),
+        config_json.is_some(),
+        config_xml.is_some(),
+        config_file.is_some(),
+    ]
+    .into_iter()
+    .filter(|value| *value)
+    .count();
+    if sources > 1 {
+        return Err(CliError::Canvas(
+            canvas_core::CanvasError::InvalidExternalToolConfig(
+                "multiple_sources".to_string(),
+            ),
+        ));
+    }
+    if sources == 0 {
+        if required {
+            return Err(CliError::Canvas(
+                canvas_core::CanvasError::InvalidExternalToolConfig(
+                    "missing_config".to_string(),
+                ),
+            ));
+        }
+        return Ok(None);
+    }
+    if let Some(url) = config_url {
+        let parsed = canvas_core::parse_external_tool_config_url(&url)?;
+        return Ok(Some(canvas_core::ExternalToolConfig::Url(parsed)));
+    }
+    if let Some(raw) = config_json {
+        let parsed = canvas_core::parse_external_tool_config_json(&raw)?;
+        return Ok(Some(canvas_core::ExternalToolConfig::Json(parsed)));
+    }
+    if let Some(raw) = config_xml {
+        let parsed = canvas_core::parse_external_tool_config_xml(raw)?;
+        return Ok(Some(canvas_core::ExternalToolConfig::Xml(parsed)));
+    }
+    let path = config_file.expect("config file path");
+    let raw = read_file_to_string(&path)?;
+    let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
+    if extension.eq_ignore_ascii_case("json") {
+        let parsed = canvas_core::parse_external_tool_config_json(&raw)?;
+        return Ok(Some(canvas_core::ExternalToolConfig::Json(parsed)));
+    }
+    if extension.eq_ignore_ascii_case("xml") {
+        let parsed = canvas_core::parse_external_tool_config_xml(raw)?;
+        return Ok(Some(canvas_core::ExternalToolConfig::Xml(parsed)));
+    }
+    if let Ok(parsed) = canvas_core::parse_external_tool_config_json(&raw) {
+        return Ok(Some(canvas_core::ExternalToolConfig::Json(parsed)));
+    }
+    let parsed = canvas_core::parse_external_tool_config_xml(raw)?;
+    Ok(Some(canvas_core::ExternalToolConfig::Xml(parsed)))
+}
+
+fn parse_external_tool_placements_input(
+    placements: Vec<String>,
+    placements_json: Option<String>,
+    placements_file: Option<PathBuf>,
+) -> Result<
+    (
+        Option<canvas_core::ExternalToolPlacementList>,
+        Option<canvas_core::ExternalToolPlacementSettings>,
+    ),
+    CliError,
+> {
+    let placements = if placements.is_empty() {
+        None
+    } else {
+        let parsed = placements
+            .into_iter()
+            .map(|raw| canvas_core::parse_external_tool_placement(&raw))
+            .collect::<Result<Vec<_>, _>>()?;
+        Some(canvas_core::parse_external_tool_placement_list(parsed)?)
+    };
+    let settings = match (placements_json, placements_file) {
+        (Some(_), Some(_)) => {
+            return Err(CliError::Canvas(
+                canvas_core::CanvasError::InvalidExternalToolPlacements(
+                    "multiple_sources".to_string(),
+                ),
+            ));
+        }
+        (Some(raw), None) => {
+            Some(canvas_core::parse_external_tool_placement_settings(&raw)?)
+        }
+        (None, Some(path)) => {
+            let raw = read_file_to_string(&path)?;
+            Some(canvas_core::parse_external_tool_placement_settings(&raw)?)
+        }
+        (None, None) => None,
+    };
+    Ok((placements, settings))
 }
 
 fn emit_result(command: &str, data: Value, global: &GlobalOptions) {
@@ -2944,6 +4817,46 @@ fn assignment_summary_json(assignment: &canvas_core::AssignmentSummary) -> Value
     })
 }
 
+fn outcome_summary_json(outcome: &canvas_core::OutcomeSummary) -> Value {
+    json!({
+        "id": outcome.id,
+        "title": outcome.title,
+        "description": outcome.description,
+        "points_possible": outcome.points_possible,
+        "mastery_points": outcome.mastery_points,
+        "ratings": outcome
+            .ratings
+            .iter()
+            .map(outcome_rating_summary_json)
+            .collect::<Vec<_>>(),
+    })
+}
+
+fn outcome_rating_summary_json(
+    rating: &canvas_core::OutcomeRatingSummary,
+) -> Value {
+    json!({
+        "description": rating.description,
+        "points": rating.points,
+    })
+}
+
+fn calendar_event_summary_json(
+    event: &canvas_core::CalendarEventSummary,
+) -> Value {
+    json!({
+        "id": event.id,
+        "title": event.title,
+        "start_at": event.start_at,
+        "end_at": event.end_at,
+        "all_day": event.all_day,
+        "all_day_date": event.all_day_date,
+        "context_type": event.context_type,
+        "context_id": event.context_id,
+        "context_code": event.context_code,
+    })
+}
+
 fn submission_summary_json(submission: &canvas_core::SubmissionSummary) -> Value {
     json!({
         "id": submission.id,
@@ -2952,6 +4865,41 @@ fn submission_summary_json(submission: &canvas_core::SubmissionSummary) -> Value
         "submitted_at": submission.submitted_at,
         "graded_at": submission.graded_at,
         "workflow_state": submission.workflow_state,
+    })
+}
+
+fn rubric_summary_json(rubric: &canvas_core::RubricSummary) -> Value {
+    json!({
+        "id": rubric.id,
+        "title": rubric.title,
+        "points_possible": rubric.points_possible,
+        "criteria": rubric
+            .criteria
+            .iter()
+            .map(rubric_criterion_summary_json)
+            .collect::<Vec<_>>(),
+    })
+}
+
+fn rubric_criterion_summary_json(
+    criterion: &canvas_core::RubricCriterionSummary,
+) -> Value {
+    json!({
+        "id": criterion.id,
+        "description": criterion.description,
+        "points": criterion.points,
+    })
+}
+
+fn rubric_association_summary_json(
+    association: &canvas_core::RubricAssociationSummary,
+) -> Value {
+    json!({
+        "id": association.id,
+        "rubric_id": association.rubric_id,
+        "association_id": association.association_id,
+        "association_type": association.association_type,
+        "use_for_grading": association.use_for_grading,
     })
 }
 
@@ -2982,6 +4930,43 @@ fn quiz_submission_summary_json(
     })
 }
 
+fn question_bank_summary_json(bank: &canvas_core::QuestionBankSummary) -> Value {
+    json!({
+        "id": bank.id,
+        "title": bank.title,
+        "question_count": bank.question_count,
+        "context_type": bank.context_type,
+        "context_id": bank.context_id,
+        "created_at": bank.created_at,
+        "updated_at": bank.updated_at,
+    })
+}
+
+fn question_answer_summary_json(answer: &canvas_core::QuestionAnswerSummary) -> Value {
+    json!({
+        "id": answer.id,
+        "text": answer.text,
+        "weight": answer.weight,
+        "comments": answer.comments,
+        "html": answer.html,
+    })
+}
+
+fn question_summary_json(question: &canvas_core::QuestionSummary) -> Value {
+    json!({
+        "id": question.id,
+        "question_name": question.question_name,
+        "question_text": question.question_text,
+        "question_type": question.question_type,
+        "points_possible": question.points_possible,
+        "position": question.position,
+        "correct_comments": question.correct_comments,
+        "incorrect_comments": question.incorrect_comments,
+        "neutral_comments": question.neutral_comments,
+        "answers": question.answers.iter().map(question_answer_summary_json).collect::<Vec<_>>(),
+    })
+}
+
 fn page_summary_json(page: &canvas_core::PageSummary) -> Value {
     json!({
         "page_id": page.page_id,
@@ -3003,6 +4988,14 @@ fn module_summary_json(module: &canvas_core::ModuleSummary) -> Value {
         "workflow_state": module.workflow_state,
         "items_count": module.items_count,
         "html_url": module.html_url,
+    })
+}
+
+fn external_tool_summary_json(tool: &canvas_core::ExternalToolSummary) -> Value {
+    json!({
+        "id": tool.id,
+        "name": tool.name,
+        "placements": tool.placements,
     })
 }
 
@@ -3339,6 +5332,56 @@ fn schema_definition() -> Value {
                 },
                 "required": ["ok", "schema_version", "command", "data"],
             },
+            "outcome_list": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "outcome_mutation": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "rubric_list": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "rubric_mutation": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "rubric_association": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
             "submission_list": {
                 "type": "object",
                 "properties": {
@@ -3407,6 +5450,46 @@ fn schema_definition() -> Value {
                     "command": { "type": "string" },
                     "data": { "type": "object" },
                 },
+                "required": ["ok", "schema_version", "command", "data"],        
+            },
+            "question_bank_list": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "question_bank_mutation": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "question_list": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "question_mutation": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
                 "required": ["ok", "schema_version", "command", "data"],
             },
             "page_list": {
@@ -3440,6 +5523,46 @@ fn schema_definition() -> Value {
                 "required": ["ok", "schema_version", "command", "data"],
             },
             "module_mutation": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],        
+            },
+            "tool_list": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "tool_mutation": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "calendar_list": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "calendar_mutation": {
                 "type": "object",
                 "properties": {
                     "ok": { "type": "boolean" },
@@ -3657,11 +5780,67 @@ fn error_code(error: &CliError) -> &'static str {
             canvas_core::CanvasError::InvalidAssignmentName(_) => {
                 "invalid_assignment_name"
             }
+            canvas_core::CanvasError::InvalidOutcomeId(_) => "invalid_outcome_id",
+            canvas_core::CanvasError::InvalidOutcomeGroupId(_) => {
+                "invalid_outcome_group_id"
+            }
+            canvas_core::CanvasError::InvalidOutcomeTitle(_) => "invalid_outcome_title",
+            canvas_core::CanvasError::InvalidOutcomeDescription(_) => {
+                "invalid_outcome_description"
+            }
+            canvas_core::CanvasError::InvalidRubricId(_) => "invalid_rubric_id",
+            canvas_core::CanvasError::InvalidRubricAssociationId(_) => {
+                "invalid_rubric_association_id"
+            }
+            canvas_core::CanvasError::InvalidRubricTitle(_) => "invalid_rubric_title",
             canvas_core::CanvasError::InvalidQuizId(_) => "invalid_quiz_id",
             canvas_core::CanvasError::InvalidQuizSubmissionId(_) => {
                 "invalid_quiz_submission_id"
             }
             canvas_core::CanvasError::InvalidQuizTitle(_) => "invalid_quiz_title",
+            canvas_core::CanvasError::InvalidQuestionBankId(_) => {
+                "invalid_question_bank_id"
+            }
+            canvas_core::CanvasError::InvalidQuestionId(_) => "invalid_question_id",
+            canvas_core::CanvasError::InvalidQuestionBankTitle(_) => {
+                "invalid_question_bank_title"
+            }
+            canvas_core::CanvasError::InvalidQuestionName(_) => "invalid_question_name",
+            canvas_core::CanvasError::InvalidQuestionText(_) => "invalid_question_text",
+            canvas_core::CanvasError::InvalidQuestionType(_) => "invalid_question_type",
+            canvas_core::CanvasError::InvalidQuestionBankUpdate(_) => {
+                "invalid_question_bank_update"
+            }
+            canvas_core::CanvasError::InvalidQuestionUpdate(_) => {
+                "invalid_question_update"
+            }
+            canvas_core::CanvasError::InvalidQuestionBankJson(_) => {
+                "invalid_question_bank_json"
+            }
+            canvas_core::CanvasError::InvalidQuestionJson(_) => "invalid_question_json",
+            canvas_core::CanvasError::InvalidCalendarEventId(_) => {
+                "invalid_calendar_event_id"
+            }
+            canvas_core::CanvasError::InvalidSectionId(_) => "invalid_section_id",
+            canvas_core::CanvasError::InvalidExternalToolId(_) => "invalid_external_tool_id",
+            canvas_core::CanvasError::InvalidExternalToolName(_) => {
+                "invalid_external_tool_name"
+            }
+            canvas_core::CanvasError::InvalidExternalToolConfig(_) => {
+                "invalid_external_tool_config"
+            }
+            canvas_core::CanvasError::InvalidExternalToolPlacement(_) => {
+                "invalid_external_tool_placement"
+            }
+            canvas_core::CanvasError::InvalidExternalToolPlacements(_) => {
+                "invalid_external_tool_placements"
+            }
+            canvas_core::CanvasError::InvalidExternalToolUpdate(_) => {
+                "invalid_external_tool_update"
+            }
+            canvas_core::CanvasError::InvalidCalendarEventTitle(_) => {
+                "invalid_calendar_event_title"
+            }
             canvas_core::CanvasError::InvalidUserId(_) => "invalid_user_id",
             canvas_core::CanvasError::InvalidSubmissionId(_) => "invalid_submission_id",
             canvas_core::CanvasError::InvalidPageId(_) => "invalid_page_id",
@@ -3684,6 +5863,10 @@ fn error_code(error: &CliError) -> &'static str {
             canvas_core::CanvasError::InvalidScore(_) => "invalid_score",
             canvas_core::CanvasError::InvalidPointsPossible(_) => "invalid_points_possible",
             canvas_core::CanvasError::InvalidDueDate(_) => "invalid_due_date",
+            canvas_core::CanvasError::InvalidEventDateTime(_) => {
+                "invalid_event_date_time"
+            }
+            canvas_core::CanvasError::InvalidAllDayDate(_) => "invalid_all_day_date",
             canvas_core::CanvasError::InvalidQuizTimeLimit(_) => {
                 "invalid_quiz_time_limit"
             }
@@ -3695,6 +5878,9 @@ fn error_code(error: &CliError) -> &'static str {
             canvas_core::CanvasError::InvalidRubricAssessment(_) => {
                 "invalid_rubric_assessment"
             }
+            canvas_core::CanvasError::InvalidRubricCriteria(_) => {
+                "invalid_rubric_criteria"
+            }
             canvas_core::CanvasError::InvalidCourseVisibility(_) => "invalid_course_visibility",
             canvas_core::CanvasError::InvalidGradingSchemeId(_) => "invalid_grading_scheme_id",
             canvas_core::CanvasError::InvalidReportType(_) => "invalid_report_type",
@@ -3703,10 +5889,15 @@ fn error_code(error: &CliError) -> &'static str {
             canvas_core::CanvasError::InvalidAssignmentUpdate(_) => {
                 "invalid_assignment_update"
             }
+            canvas_core::CanvasError::InvalidOutcomeUpdate(_) => "invalid_outcome_update",
             canvas_core::CanvasError::InvalidQuizUpdate(_) => "invalid_quiz_update",
             canvas_core::CanvasError::InvalidPageUpdate(_) => "invalid_page_update",
             canvas_core::CanvasError::InvalidModuleUpdate(_) => "invalid_module_update",
             canvas_core::CanvasError::InvalidModuleReorder(_) => "invalid_module_reorder",
+            canvas_core::CanvasError::InvalidRubricUpdate(_) => "invalid_rubric_update",
+            canvas_core::CanvasError::InvalidCalendarEventCreate(_) => {
+                "invalid_calendar_event_create"
+            }
             canvas_core::CanvasError::MissingAssignmentPoints(_) => {
                 "missing_assignment_points"
             }
@@ -3718,6 +5909,15 @@ fn error_code(error: &CliError) -> &'static str {
             canvas_core::CanvasError::ReportNotReady(_) => "report_not_ready",
             canvas_core::CanvasError::ReportDownloadFailed(_) => "report_download_failed",
             canvas_core::CanvasError::ReportTimeout(_) => "report_timeout",
+            canvas_core::CanvasError::InvalidCalendarEventUpdate(_) => {
+                "invalid_calendar_event_update"
+            }
+            canvas_core::CanvasError::InvalidCalendarEventContext(_) => {
+                "invalid_calendar_event_context"
+            }
+            canvas_core::CanvasError::InvalidRubricAssociationTarget(_) => {
+                "invalid_rubric_association_target"
+            }
             canvas_core::CanvasError::InvalidHost(_) => "invalid_host",
             canvas_core::CanvasError::InvalidToken => "invalid_token",
             canvas_core::CanvasError::MissingConfig(_) => "missing_config",
@@ -3746,11 +5946,73 @@ fn error_details(error: &CliError) -> Value {
             canvas_core::CanvasError::InvalidAssignmentName(raw) => {
                 json!({ "input": raw })
             }
+            canvas_core::CanvasError::InvalidOutcomeId(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidOutcomeGroupId(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidOutcomeTitle(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidOutcomeDescription(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidRubricId(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidRubricAssociationId(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidRubricTitle(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidQuizId(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidQuizSubmissionId(raw) => {
                 json!({ "input": raw })
             }
             canvas_core::CanvasError::InvalidQuizTitle(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidQuestionBankId(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidQuestionId(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidQuestionBankTitle(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidQuestionName(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidQuestionText(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidQuestionType(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidQuestionBankUpdate(detail) => {
+                json!({ "detail": detail })
+            }
+            canvas_core::CanvasError::InvalidQuestionUpdate(detail) => {
+                json!({ "detail": detail })
+            }
+            canvas_core::CanvasError::InvalidQuestionBankJson(detail) => {
+                json!({ "detail": detail })
+            }
+            canvas_core::CanvasError::InvalidQuestionJson(detail) => {
+                json!({ "detail": detail })
+            }
+            canvas_core::CanvasError::InvalidCalendarEventId(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidSectionId(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidExternalToolId(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidExternalToolName(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidExternalToolConfig(detail) => {
+                json!({ "detail": detail })
+            }
+            canvas_core::CanvasError::InvalidExternalToolPlacement(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidExternalToolPlacements(detail) => {
+                json!({ "detail": detail })
+            }
+            canvas_core::CanvasError::InvalidExternalToolUpdate(detail) => {
+                json!({ "detail": detail })
+            }
+            canvas_core::CanvasError::InvalidCalendarEventTitle(raw) => {
+                json!({ "input": raw })
+            }
             canvas_core::CanvasError::InvalidUserId(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidSubmissionId(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidPageId(raw) => json!({ "input": raw }),
@@ -3777,6 +6039,12 @@ fn error_details(error: &CliError) -> Value {
                 json!({ "input": raw })
             }
             canvas_core::CanvasError::InvalidDueDate(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidEventDateTime(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidAllDayDate(raw) => {
+                json!({ "input": raw })
+            }
             canvas_core::CanvasError::InvalidQuizTimeLimit(raw) => {
                 json!({ "input": raw })
             }
@@ -3788,12 +6056,18 @@ fn error_details(error: &CliError) -> Value {
             canvas_core::CanvasError::InvalidRubricAssessment(raw) => {
                 json!({ "input": raw })
             }
+            canvas_core::CanvasError::InvalidRubricCriteria(raw) => {
+                json!({ "input": raw })
+            }
             canvas_core::CanvasError::InvalidCourseVisibility(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidGradingSchemeId(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidReportType(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidCourseDates(detail) => json!({ "detail": detail }),
             canvas_core::CanvasError::InvalidCourseUpdate(detail) => json!({ "detail": detail }),
             canvas_core::CanvasError::InvalidAssignmentUpdate(detail) => {
+                json!({ "detail": detail })
+            }
+            canvas_core::CanvasError::InvalidOutcomeUpdate(detail) => {
                 json!({ "detail": detail })
             }
             canvas_core::CanvasError::InvalidQuizUpdate(detail) => {
@@ -3806,6 +6080,21 @@ fn error_details(error: &CliError) -> Value {
                 json!({ "detail": detail })
             }
             canvas_core::CanvasError::InvalidModuleReorder(detail) => {
+                json!({ "detail": detail })
+            }
+            canvas_core::CanvasError::InvalidRubricUpdate(detail) => {
+                json!({ "detail": detail })
+            }
+            canvas_core::CanvasError::InvalidCalendarEventCreate(detail) => {
+                json!({ "detail": detail })
+            }
+            canvas_core::CanvasError::InvalidCalendarEventUpdate(detail) => {
+                json!({ "detail": detail })
+            }
+            canvas_core::CanvasError::InvalidCalendarEventContext(detail) => {
+                json!({ "detail": detail })
+            }
+            canvas_core::CanvasError::InvalidRubricAssociationTarget(detail) => {
                 json!({ "detail": detail })
             }
             canvas_core::CanvasError::MissingAssignmentPoints(assignment_id) => {
@@ -4040,6 +6329,247 @@ impl TryFrom<(AssignmentCommand, &GlobalOptions)> for AssignmentRequest {
                 Ok(AssignmentRequest::Delete(AssignmentDeleteRequest {
                     course_id,
                     assignment_id,
+                }))
+            }
+        }
+    }
+}
+
+impl TryFrom<(OutcomeCommand, &GlobalOptions)> for OutcomeRequest {
+    type Error = CliError;
+
+    fn try_from(
+        input: (OutcomeCommand, &GlobalOptions),
+    ) -> Result<Self, Self::Error> {
+        let (command, global) = input;
+        match command {
+            OutcomeCommand::List { course } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                Ok(OutcomeRequest::List(OutcomeListRequest { course_id }))
+            }
+            OutcomeCommand::Create {
+                course,
+                group,
+                title,
+                description,
+                points_possible,
+                mastery_points,
+            } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let outcome_group_id =
+                    canvas_core::parse_outcome_group_id(&group)?;
+                let title = canvas_core::parse_outcome_title(&title)?;
+                let description = match description {
+                    Some(raw) => Some(canvas_core::parse_outcome_description(&raw)?),
+                    None => None,
+                };
+                let points_possible = match points_possible {
+                    Some(raw) => Some(canvas_core::parse_points_possible(&raw)?),
+                    None => None,
+                };
+                let mastery_points = match mastery_points {
+                    Some(raw) => Some(canvas_core::parse_points_possible(&raw)?),
+                    None => None,
+                };
+                let input = canvas_core::OutcomeCreateInput::new(
+                    title,
+                    description,
+                    points_possible,
+                    mastery_points,
+                )?;
+                Ok(OutcomeRequest::Create(OutcomeCreateRequest {
+                    course_id,
+                    outcome_group_id,
+                    input,
+                }))
+            }
+            OutcomeCommand::Update {
+                outcome,
+                title,
+                description,
+                points_possible,
+                mastery_points,
+            } => {
+                let outcome_id = canvas_core::parse_outcome_id(&outcome)?;
+                let title = match title {
+                    Some(raw) => Some(canvas_core::parse_outcome_title(&raw)?),
+                    None => None,
+                };
+                let description = match description {
+                    Some(raw) => Some(canvas_core::parse_outcome_description(&raw)?),
+                    None => None,
+                };
+                let points_possible = match points_possible {
+                    Some(raw) => Some(canvas_core::parse_points_possible(&raw)?),
+                    None => None,
+                };
+                let mastery_points = match mastery_points {
+                    Some(raw) => Some(canvas_core::parse_points_possible(&raw)?),
+                    None => None,
+                };
+                let input = canvas_core::OutcomeUpdateInput::new(
+                    title,
+                    description,
+                    points_possible,
+                    mastery_points,
+                )?;
+                Ok(OutcomeRequest::Update(OutcomeUpdateRequest {
+                    outcome_id,
+                    input,
+                }))
+            }
+            OutcomeCommand::Delete {
+                course,
+                group,
+                outcome,
+            } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let outcome_group_id =
+                    canvas_core::parse_outcome_group_id(&group)?;
+                let outcome_id = canvas_core::parse_outcome_id(&outcome)?;
+                Ok(OutcomeRequest::Delete(OutcomeDeleteRequest {
+                    course_id,
+                    outcome_group_id,
+                    outcome_id,
+                }))
+            }
+        }
+    }
+}
+
+impl TryFrom<(RubricCommand, &GlobalOptions)> for RubricRequest {
+    type Error = CliError;
+
+    fn try_from(
+        input: (RubricCommand, &GlobalOptions),
+    ) -> Result<Self, Self::Error> {
+        let (command, global) = input;
+        match command {
+            RubricCommand::List { course } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                Ok(RubricRequest::List(RubricListRequest { course_id }))
+            }
+            RubricCommand::Create {
+                course,
+                title,
+                criteria_json,
+                criteria_file,
+            } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let title = canvas_core::parse_rubric_title(&title)?;
+                let criteria = parse_rubric_criteria_input(criteria_json, criteria_file)?
+                    .ok_or_else(|| {
+                        CliError::Canvas(canvas_core::CanvasError::InvalidRubricCriteria(
+                            "missing_criteria".to_string(),
+                        ))
+                    })?;
+                let input = canvas_core::RubricCreateInput::new(title, criteria);
+                Ok(RubricRequest::Create(RubricCreateRequest { course_id, input }))
+            }
+            RubricCommand::Update {
+                course,
+                rubric,
+                title,
+                criteria_json,
+                criteria_file,
+            } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let rubric_id = canvas_core::parse_rubric_id(&rubric)?;
+                let title = match title {
+                    Some(raw) => Some(canvas_core::parse_rubric_title(&raw)?),
+                    None => None,
+                };
+                let criteria =
+                    parse_rubric_criteria_input(criteria_json, criteria_file)?;
+                let input = canvas_core::RubricUpdateInput::new(title, criteria)?;
+                Ok(RubricRequest::Update(RubricUpdateRequest {
+                    course_id,
+                    rubric_id,
+                    input,
+                }))
+            }
+            RubricCommand::Delete { course, rubric } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let rubric_id = canvas_core::parse_rubric_id(&rubric)?;
+                Ok(RubricRequest::Delete(RubricDeleteRequest {
+                    course_id,
+                    rubric_id,
+                }))
+            }
+            RubricCommand::Attach {
+                course,
+                rubric,
+                assignment,
+                outcome,
+                grading,
+                title,
+            } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let rubric_id = canvas_core::parse_rubric_id(&rubric)?;
+                let assignment_id = match assignment {
+                    Some(raw) => Some(canvas_core::parse_assignment_id(&raw)?),
+                    None => None,
+                };
+                let outcome_id = match outcome {
+                    Some(raw) => Some(canvas_core::parse_outcome_id(&raw)?),
+                    None => None,
+                };
+                let target =
+                    canvas_core::parse_rubric_association_target(assignment_id, outcome_id)?;
+                let selection = canvas_core::parse_rubric_selection(&grading)?;
+                let input =
+                    canvas_core::RubricAssociationInput::new(rubric_id, target, selection, title);
+                Ok(RubricRequest::Attach(RubricAttachRequest {
+                    course_id,
+                    input,
+                }))
+            }
+            RubricCommand::Detach {
+                course,
+                association,
+            } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let rubric_association_id =
+                    canvas_core::parse_rubric_association_id(&association)?;
+                Ok(RubricRequest::Detach(RubricDetachRequest {
+                    course_id,
+                    rubric_association_id,
                 }))
             }
         }
@@ -4340,6 +6870,152 @@ impl TryFrom<(QuizSubmissionCommand, &GlobalOptions)> for QuizSubmissionRequest 
     }
 }
 
+impl TryFrom<(QuestionBankCommand, &GlobalOptions)> for QuestionBankRequest {
+    type Error = CliError;
+
+    fn try_from(
+        input: (QuestionBankCommand, &GlobalOptions),
+    ) -> Result<Self, Self::Error> {
+        let (command, global) = input;
+        match command {
+            QuestionBankCommand::List { course } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                Ok(QuestionBankRequest::List(QuestionBankListRequest { course_id }))
+            }
+            QuestionBankCommand::Create {
+                course,
+                title,
+                bank_json,
+                bank_file,
+            } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let input = parse_question_bank_create_input(title, bank_json, bank_file)?;
+                Ok(QuestionBankRequest::Create(QuestionBankCreateRequest { course_id, input }))
+            }
+            QuestionBankCommand::Update {
+                course,
+                bank,
+                title,
+                bank_json,
+                bank_file,
+            } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let bank_id = canvas_core::parse_question_bank_id(&bank)?;
+                let input = parse_question_bank_update_input(title, bank_json, bank_file)?;
+                Ok(QuestionBankRequest::Update(QuestionBankUpdateRequest {
+                    course_id,
+                    bank_id,
+                    input,
+                }))
+            }
+            QuestionBankCommand::Delete { course, bank } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let bank_id = canvas_core::parse_question_bank_id(&bank)?;
+                Ok(QuestionBankRequest::Delete(QuestionBankDeleteRequest {
+                    course_id,
+                    bank_id,
+                }))
+            }
+        }
+    }
+}
+
+impl TryFrom<(QuestionCommand, &GlobalOptions)> for QuestionRequest {
+    type Error = CliError;
+
+    fn try_from(input: (QuestionCommand, &GlobalOptions)) -> Result<Self, Self::Error> {
+        let (command, _global) = input;
+        match command {
+            QuestionCommand::List { bank } => {
+                let bank_id = canvas_core::parse_question_bank_id(&bank)?;
+                Ok(QuestionRequest::List(QuestionListRequest { bank_id }))
+            }
+            QuestionCommand::Create {
+                bank,
+                name,
+                text,
+                question_type,
+                points,
+                correct_comments,
+                incorrect_comments,
+                neutral_comments,
+                question_json,
+                question_file,
+            } => {
+                let bank_id = canvas_core::parse_question_bank_id(&bank)?;
+                let input = parse_question_create_input(
+                    name,
+                    text,
+                    question_type,
+                    points,
+                    correct_comments,
+                    incorrect_comments,
+                    neutral_comments,
+                    question_json,
+                    question_file,
+                )?;
+                Ok(QuestionRequest::Create(QuestionCreateRequest { bank_id, input }))
+            }
+            QuestionCommand::Update {
+                bank,
+                question,
+                name,
+                text,
+                question_type,
+                points,
+                correct_comments,
+                incorrect_comments,
+                neutral_comments,
+                question_json,
+                question_file,
+            } => {
+                let bank_id = canvas_core::parse_question_bank_id(&bank)?;
+                let question_id = canvas_core::parse_question_id(&question)?;
+                let input = parse_question_update_input(
+                    name,
+                    text,
+                    question_type,
+                    points,
+                    correct_comments,
+                    incorrect_comments,
+                    neutral_comments,
+                    question_json,
+                    question_file,
+                )?;
+                Ok(QuestionRequest::Update(QuestionUpdateRequest {
+                    bank_id,
+                    question_id,
+                    input,
+                }))
+            }
+            QuestionCommand::Delete { bank, question } => {
+                let bank_id = canvas_core::parse_question_bank_id(&bank)?;
+                let question_id = canvas_core::parse_question_id(&question)?;
+                Ok(QuestionRequest::Delete(QuestionDeleteRequest {
+                    bank_id,
+                    question_id,
+                }))
+            }
+        }
+    }
+}
+
 impl TryFrom<(PageCommand, &GlobalOptions)> for PageRequest {
     type Error = CliError;
 
@@ -4531,6 +7207,226 @@ impl TryFrom<(ModuleCommand, &GlobalOptions)> for ModuleRequest {
                     course_id,
                     module_id,
                     publish_state,
+                }))
+            }
+        }
+    }
+}
+
+impl TryFrom<(ToolCommand, &GlobalOptions)> for ToolRequest {
+    type Error = CliError;
+
+    fn try_from(input: (ToolCommand, &GlobalOptions)) -> Result<Self, Self::Error> {
+        let (command, global) = input;
+        match command {
+            ToolCommand::List { course } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                Ok(ToolRequest::List(ToolListRequest { course_id }))
+            }
+            ToolCommand::Create {
+                course,
+                name,
+                config_url,
+                config_json,
+                config_xml,
+                config_file,
+                placement,
+                placements_json,
+                placements_file,
+            } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let name = canvas_core::parse_external_tool_name(&name)?;
+                let config = parse_external_tool_config_input(
+                    config_url,
+                    config_json,
+                    config_xml,
+                    config_file,
+                    true,
+                )?
+                .ok_or_else(|| {
+                    CliError::Canvas(canvas_core::CanvasError::InvalidExternalToolConfig(
+                        "missing_config".to_string(),
+                    ))
+                })?;
+                let (placements, placement_settings) = parse_external_tool_placements_input(
+                    placement,
+                    placements_json,
+                    placements_file,
+                )?;
+                Ok(ToolRequest::Create(ToolCreateRequest {
+                    course_id,
+                    name,
+                    config,
+                    placements,
+                    placement_settings,
+                }))
+            }
+            ToolCommand::Update {
+                course,
+                tool,
+                name,
+                config_url,
+                config_json,
+                config_xml,
+                config_file,
+                placement,
+                placements_json,
+                placements_file,
+            } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let tool_id = canvas_core::parse_external_tool_id(&tool)?;
+                let name = match name {
+                    Some(raw) => Some(canvas_core::parse_external_tool_name(&raw)?),
+                    None => None,
+                };
+                let config = parse_external_tool_config_input(
+                    config_url,
+                    config_json,
+                    config_xml,
+                    config_file,
+                    false,
+                )?;
+                let (placements, placement_settings) = parse_external_tool_placements_input(
+                    placement,
+                    placements_json,
+                    placements_file,
+                )?;
+                Ok(ToolRequest::Update(ToolUpdateRequest {
+                    course_id,
+                    tool_id,
+                    name,
+                    config,
+                    placements,
+                    placement_settings,
+                }))
+            }
+            ToolCommand::Delete { course, tool } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let tool_id = canvas_core::parse_external_tool_id(&tool)?;
+                Ok(ToolRequest::Delete(ToolDeleteRequest { course_id, tool_id }))
+            }
+        }
+    }
+}
+
+impl TryFrom<(CalendarCommand, &GlobalOptions)> for CalendarEventRequest {
+    type Error = CliError;
+
+    fn try_from(
+        input: (CalendarCommand, &GlobalOptions),
+    ) -> Result<Self, Self::Error> {
+        let (command, global) = input;
+        match command {
+            CalendarCommand::List { course, section } => {
+                let section_id = match section {
+                    Some(raw) => Some(canvas_core::parse_section_id(&raw)?),
+                    None => None,
+                };
+                if section_id.is_some() && course.is_some() {
+                    return Err(CliError::Canvas(
+                        canvas_core::CanvasError::InvalidCalendarEventContext(
+                            "conflicting_context".to_string(),
+                        ),
+                    ));
+                }
+                let course_id = if section_id.is_some() {
+                    None
+                } else {
+                    match course {
+                        Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                        None => global.course,
+                    }
+                };
+                let context =
+                    canvas_core::parse_calendar_event_context(course_id, section_id)?;
+                Ok(CalendarEventRequest::List(CalendarEventListRequest {
+                    context,
+                }))
+            }
+            CalendarCommand::Create {
+                course,
+                section,
+                title,
+                start_at,
+                end_at,
+                all_day_date,
+            } => {
+                let section_id = match section {
+                    Some(raw) => Some(canvas_core::parse_section_id(&raw)?),
+                    None => None,
+                };
+                if section_id.is_some() && course.is_some() {
+                    return Err(CliError::Canvas(
+                        canvas_core::CanvasError::InvalidCalendarEventContext(
+                            "conflicting_context".to_string(),
+                        ),
+                    ));
+                }
+                let course_id = if section_id.is_some() {
+                    None
+                } else {
+                    match course {
+                        Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                        None => global.course,
+                    }
+                };
+                let context =
+                    canvas_core::parse_calendar_event_context(course_id, section_id)?;
+                let title = canvas_core::parse_calendar_event_title(&title)?;
+                let timing = parse_calendar_timing_for_create(
+                    start_at,
+                    end_at,
+                    all_day_date,
+                )?;
+                let input =
+                    canvas_core::CalendarEventCreateInput::new(context, title, timing);
+                Ok(CalendarEventRequest::Create(CalendarEventCreateRequest {
+                    input,
+                }))
+            }
+            CalendarCommand::Update {
+                event_id,
+                title,
+                start_at,
+                end_at,
+                all_day_date,
+            } => {
+                let event_id = canvas_core::parse_calendar_event_id(&event_id)?;
+                let title = match title {
+                    Some(raw) => Some(canvas_core::parse_calendar_event_title(&raw)?),
+                    None => None,
+                };
+                let timing = parse_calendar_timing_for_update(
+                    start_at,
+                    end_at,
+                    all_day_date,
+                )?;
+                let input = canvas_core::CalendarEventUpdateInput::new(title, timing)?;
+                Ok(CalendarEventRequest::Update(CalendarEventUpdateRequest {
+                    event_id,
+                    input,
+                }))
+            }
+            CalendarCommand::Delete { event_id } => {
+                let event_id = canvas_core::parse_calendar_event_id(&event_id)?;
+                Ok(CalendarEventRequest::Delete(CalendarEventDeleteRequest {
+                    event_id,
                 }))
             }
         }
@@ -5023,7 +7919,7 @@ mod tests {
 
     #[test]
     fn cli_help_snapshot_matches() {
-        let help = Cli::command().render_long_help().to_string();
+        let help = Cli::command().render_help().to_string();
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests")
             .join("snapshots")

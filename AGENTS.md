@@ -15,4 +15,9 @@
 - Report exports use `ReportType` + `/courses/:course_id/reports/:report_type`, poll with `wait_for_report`, and stream downloads via `download_report_to_writer` to avoid large in-memory buffers.
 - Keep `canvas --schema` outputs in sync with JSON response keys, and bump `schema_version` when shapes change.
 - Snapshot tests live in `canvas-cli/tests/snapshots`; regenerate with `cargo run -p canvas-cli -- --schema` and `cargo run -p canvas-cli -- --help`.
-- Quizzes: validate availability windows via `parse_quiz_availability`, grade submissions against quiz `points_possible`, and require `--confirm` for publish.
+- Quizzes: validate availability windows via `parse_quiz_availability`, grade submissions against quiz `points_possible`, and require `--confirm` for publish.  
+- Calendar events use `/calendar_events` with `context_codes[]=course_<id>` or `section_<id>`; all-day uses `all_day_date` (YYYY-MM-DD) and timed uses RFC3339 start/end.
+- Outcomes: create/delete via `/courses/:course_id/outcome_groups/:id/outcomes` (title required, other fields optional); update via `/outcomes/:id`.
+- Rubrics: criteria input is a non-empty JSON array; attach/detach uses `/courses/:course_id/rubric_associations` and requires `--confirm`.
+- External tools: config accepts URL or XML/JSON (file autodetects .json/.xml); placements accept repeatable `--placement` plus optional placements JSON settings object.
+- Question banks/questions live in `canvas-core/src/question_banks/`; CLI supports JSON input via `--bank-json`/`--bank-file` and `--question-json`/`--question-file`, with `QuestionType` validation at parse time.
