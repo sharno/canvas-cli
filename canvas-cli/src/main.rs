@@ -6,10 +6,11 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 
 use canvas_models::{
-    AssignmentId, CalendarEventContext, CalendarEventId, CourseId, FileId,
-    FolderId, ModuleId, OutcomeGroupId, OutcomeId, PageId, QuestionBankId,
-    QuestionId, QuizId, QuizSubmissionId, ReportType, RubricAssociationId,
-    RubricId, UserId,
+    AssignmentId, CalendarEventContext, CalendarEventId, CollaborationId,
+    ConferenceId, ContentMigrationId, CourseId, FileId, FolderId, GradingPeriodId,
+    GradingPostingPolicy, ModuleId, OutcomeGroupId, OutcomeId, PageId,
+    QuestionBankId, QuestionId, QuizId, QuizSubmissionId, ReportType,
+    RubricAssociationId, RubricId, UserId,
 };
 use clap::{Args, Parser, Subcommand};
 use csv::ReaderBuilder;
@@ -17,7 +18,7 @@ use serde_json::{json, Value};
 use thiserror::Error;
 use tracing::info;
 
-const SCHEMA_VERSION: &str = "v4";
+const SCHEMA_VERSION: &str = "v9";
 
 #[derive(Debug, Parser)]
 #[command(
@@ -125,7 +126,7 @@ enum Command {
         command: PageCommand,
     },
     /// Module-related operations
-    #[command(after_help = "Examples:\n  canvas module list --course 42\n  canvas module create --course 42 --name \"Week 1\" --publish-state published\n  canvas module update --course 42 --module 5 --name \"Week 1\" --publish-state unpublished\n  canvas module reorder --course 42 --module 5 --module 9\n  canvas module publish --course 42 --module 5 --publish-state published")]
+    #[command(after_help = "Examples:\n  canvas module list --course 42\n  canvas module create --course 42 --name \"Week 1\" --publish-state published\n  canvas module update --course 42 --module 5 --name \"Week 1\" --publish-state unpublished\n  canvas module reorder --course 42 --module 5 --module 9\n  canvas module publish --course 42 --module 5 --publish-state published\n  canvas module requirement list --course 42 --module 5\n  canvas module requirement update --course 42 --module 5 --requirements-json \"[{\\\"item_id\\\":1,\\\"type\\\":\\\"view\\\"}]\"")]
     Module {
         #[command(subcommand)]
         command: ModuleCommand,
@@ -142,6 +143,18 @@ enum Command {
         #[command(subcommand)]
         command: CalendarCommand,
     },
+    /// Conference operations
+    #[command(after_help = "Examples:\n  canvas conference list --course 42\n  canvas conference create --course 42 --title \"Weekly Sync\" --start-at 2025-02-01T10:00:00Z --duration 45 --recording enabled\n  canvas conference update --course 42 --conference 9 --title \"Updated\" --duration 60\n  canvas conference delete --course 42 --conference 9 --confirm")]
+    Conference {
+        #[command(subcommand)]
+        command: ConferenceCommand,
+    },
+    /// Collaboration operations
+    #[command(after_help = "Examples:\n  canvas collaboration list --course 42\n  canvas collaboration create --course 42 --title \"Project Doc\" --collaboration-type google_docs --user 99 --group 12\n  canvas collaboration delete --collaboration 7 --confirm")]
+    Collaboration {
+        #[command(subcommand)]
+        command: CollaborationCommand,
+    },
     /// File-related operations
     #[command(after_help = "Examples:\n  canvas file list --course 42\n  canvas file upload --course 42 --file syllabus.pdf\n  canvas file delete --file 100 --confirm")]
     File {
@@ -153,6 +166,12 @@ enum Command {
     Folder {
         #[command(subcommand)]
         command: FolderCommand,
+    },
+    /// Content migration operations
+    #[command(after_help = "Examples:\n  canvas content-migration list --course 42\n  canvas content-migration create --course 42 --type course_copy --source-course 99\n  canvas content-migration create --course 42 --type file_import --file course.zip\n  canvas content-migration show --course 42 --migration 5 --wait")]
+    ContentMigration {
+        #[command(subcommand)]
+        command: ContentMigrationCommand,
     },
     /// Announcement-related operations
     #[command(after_help = "Examples:\n  canvas announcement list --course 42\n  canvas announcement create --course 42 --title \"Welcome\" --message \"Hello\"")]
@@ -185,10 +204,16 @@ enum Command {
         command: GroupCommand,
     },
     /// Analytics and report operations
-    #[command(after_help = "Examples:\n  canvas report gradebook-export --course 42 --format csv\n  canvas report submission-status --course 42 --format json\n  canvas report course-activity --course 42")]
+    #[command(after_help = "Examples:\n  canvas report gradebook-export --course 42 --format csv\n  canvas report submission-status --course 42 --format json\n  canvas report course-activity --course 42\n  canvas report grade-change-log --course 42 --format csv")]
     Report {
         #[command(subcommand)]
         command: ReportCommand,
+    },
+    /// Gradebook policies and grading periods
+    #[command(after_help = "Examples:\n  canvas gradebook grading-period list --course 42\n  canvas gradebook grading-period show --course 42 --period 9\n  canvas gradebook posting-policy get --course 42\n  canvas gradebook posting-policy set --course 42 --policy manual --confirm")]
+    Gradebook {
+        #[command(subcommand)]
+        command: GradebookCommand,
     },
     /// Natural-language command planning
     #[command(after_help = "Example:\n  canvas ask \"list assignments\" --json")]
@@ -916,6 +941,51 @@ enum ModuleCommand {
         #[arg(long = "publish-state")]
         publish_state: String,
     },
+    /// Manage module requirements
+    Requirement {
+        #[command(subcommand)]
+        command: ModuleRequirementCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ModuleRequirementCommand {
+    /// List module requirements and prerequisites
+    List {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Module id
+        #[arg(long)]
+        module: String,
+    },
+    /// Update module requirements, prerequisites, or unlock rules
+    Update {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Module id
+        #[arg(long)]
+        module: String,
+        /// Requirements JSON array
+        #[arg(long = "requirements-json")]
+        requirements_json: Option<String>,
+        /// Requirements JSON file
+        #[arg(long = "requirements-file")]
+        requirements_file: Option<PathBuf>,
+        /// Prerequisite module ids JSON array
+        #[arg(long = "prerequisites-json")]
+        prerequisites_json: Option<String>,
+        /// Prerequisite module ids JSON file
+        #[arg(long = "prerequisites-file")]
+        prerequisites_file: Option<PathBuf>,
+        /// Module unlock timestamp (RFC3339)
+        #[arg(long = "unlock-at")]
+        unlock_at: Option<String>,
+        /// Sequential progress setting (enabled or disabled)
+        #[arg(long = "sequential-progress")]
+        sequential_progress: Option<SequentialProgressSetting>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -1059,6 +1129,104 @@ enum CalendarCommand {
 }
 
 #[derive(Debug, Subcommand)]
+enum ConferenceCommand {
+    /// List conferences
+    List {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+    },
+    /// Create a conference
+    Create {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Conference title
+        #[arg(long)]
+        title: String,
+        /// Conference description
+        #[arg(long)]
+        description: Option<String>,
+        /// Conference start time (RFC3339)
+        #[arg(long = "start-at")]
+        start_at: Option<String>,
+        /// Conference duration in minutes
+        #[arg(long)]
+        duration: Option<String>,
+        /// Recording setting (enabled or disabled)
+        #[arg(long)]
+        recording: Option<RecordingSetting>,
+    },
+    /// Update a conference
+    Update {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Conference id
+        #[arg(long)]
+        conference: String,
+        /// Conference title
+        #[arg(long)]
+        title: Option<String>,
+        /// Conference description
+        #[arg(long)]
+        description: Option<String>,
+        /// Conference start time (RFC3339)
+        #[arg(long = "start-at")]
+        start_at: Option<String>,
+        /// Conference duration in minutes
+        #[arg(long)]
+        duration: Option<String>,
+        /// Recording setting (enabled or disabled)
+        #[arg(long)]
+        recording: Option<RecordingSetting>,
+    },
+    /// Delete a conference
+    Delete {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Conference id
+        #[arg(long)]
+        conference: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum CollaborationCommand {
+    /// List collaborations for a course
+    List {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+    },
+    /// Create a collaboration
+    Create {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Collaboration title
+        #[arg(long)]
+        title: String,
+        /// Collaboration type (google_docs or office365)
+        #[arg(long = "collaboration-type")]
+        collaboration_type: String,
+        /// Collaborator user ids
+        #[arg(long = "user")]
+        user_ids: Vec<String>,
+        /// Collaborator group ids
+        #[arg(long = "group")]
+        group_ids: Vec<String>,
+    },
+    /// Delete a collaboration
+    Delete {
+        /// Collaboration id
+        #[arg(long)]
+        collaboration: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
 enum FileCommand {
     /// List files for a course
     List {
@@ -1108,6 +1276,46 @@ enum FolderCommand {
         /// Parent folder id
         #[arg(long = "parent-folder")]
         parent_folder: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ContentMigrationCommand {
+    /// List content migrations for a course
+    List {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+    },
+    /// Create a content migration
+    Create {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Migration type (course_copy, file_import)
+        #[arg(long = "type")]
+        migration_type: String,
+        /// Source course id (required for course_copy)
+        #[arg(long = "source-course")]
+        source_course: Option<String>,
+        /// Zip file to import (required for file_import)
+        #[arg(long)]
+        file: Option<PathBuf>,
+        /// Wait for completion
+        #[arg(long)]
+        wait: bool,
+    },
+    /// Show a content migration
+    Show {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Content migration id
+        #[arg(long)]
+        migration: String,
+        /// Wait for completion
+        #[arg(long)]
+        wait: bool,
     },
 }
 
@@ -1242,6 +1450,70 @@ enum ReportCommand {
         #[arg(long)]
         course: Option<String>,
     },
+    /// Export grade change log if available
+    GradeChangeLog {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Output format (json or csv)
+        #[arg(long, value_enum, default_value = "json")]
+        format: ReportFormat,
+        /// Output file path for CSV
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum GradebookCommand {
+    /// Manage grading periods
+    GradingPeriod {
+        #[command(subcommand)]
+        command: GradingPeriodCommand,
+    },
+    /// Manage gradebook posting policy
+    PostingPolicy {
+        #[command(subcommand)]
+        command: PostingPolicyCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum GradingPeriodCommand {
+    /// List grading periods for a course
+    List {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+    },
+    /// Show a grading period
+    Show {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Grading period id
+        #[arg(long)]
+        period: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum PostingPolicyCommand {
+    /// Get the gradebook posting policy
+    Get {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+    },
+    /// Update the gradebook posting policy
+    Set {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Posting policy (automatic or manual)
+        #[arg(long)]
+        policy: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -1254,6 +1526,30 @@ enum ImportFormat {
 enum ReportFormat {
     Json,
     Csv,
+}
+
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+enum RecordingSetting {
+    Enabled,
+    Disabled,
+}
+
+impl RecordingSetting {
+    fn as_bool(self) -> bool {
+        matches!(self, RecordingSetting::Enabled)
+    }
+}
+
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+enum SequentialProgressSetting {
+    Enabled,
+    Disabled,
+}
+
+impl SequentialProgressSetting {
+    fn as_bool(self) -> bool {
+        matches!(self, SequentialProgressSetting::Enabled)
+    }
 }
 
 #[derive(Debug)]
@@ -1421,6 +1717,61 @@ enum CalendarEventRequest {
     Create(CalendarEventCreateRequest),
     Update(CalendarEventUpdateRequest),
     Delete(CalendarEventDeleteRequest),
+}
+
+#[derive(Debug)]
+struct ConferenceListRequest {
+    course_id: CourseId,
+}
+
+#[derive(Debug)]
+struct ConferenceCreateRequest {
+    course_id: CourseId,
+    input: canvas_core::ConferenceCreateInput,
+}
+
+#[derive(Debug)]
+struct ConferenceUpdateRequest {
+    course_id: CourseId,
+    conference_id: ConferenceId,
+    input: canvas_core::ConferenceUpdateInput,
+}
+
+#[derive(Debug)]
+struct ConferenceDeleteRequest {
+    course_id: CourseId,
+    conference_id: ConferenceId,
+}
+
+#[derive(Debug)]
+enum ConferenceRequest {
+    List(ConferenceListRequest),
+    Create(ConferenceCreateRequest),
+    Update(ConferenceUpdateRequest),
+    Delete(ConferenceDeleteRequest),
+}
+
+#[derive(Debug)]
+struct CollaborationListRequest {
+    course_id: CourseId,
+}
+
+#[derive(Debug)]
+struct CollaborationCreateRequest {
+    course_id: CourseId,
+    input: canvas_core::CollaborationCreateInput,
+}
+
+#[derive(Debug)]
+struct CollaborationDeleteRequest {
+    collaboration_id: CollaborationId,
+}
+
+#[derive(Debug)]
+enum CollaborationRequest {
+    List(CollaborationListRequest),
+    Create(CollaborationCreateRequest),
+    Delete(CollaborationDeleteRequest),
 }
 
 #[derive(Debug)]
@@ -1633,12 +1984,27 @@ struct ModulePublishRequest {
 }
 
 #[derive(Debug)]
+struct ModuleRequirementListRequest {
+    course_id: CourseId,
+    module_id: ModuleId,
+}
+
+#[derive(Debug)]
+struct ModuleRequirementUpdateRequest {
+    course_id: CourseId,
+    module_id: ModuleId,
+    input: canvas_core::ModuleRequirementsUpdateInput,
+}
+
+#[derive(Debug)]
 enum ModuleRequest {
     List(ModuleListRequest),
     Create(ModuleCreateRequest),
     Update(ModuleUpdateRequest),
     Reorder(ModuleReorderRequest),
     Publish(ModulePublishRequest),
+    RequirementList(ModuleRequirementListRequest),
+    RequirementUpdate(ModuleRequirementUpdateRequest),
 }
 
 #[derive(Debug)]
@@ -1719,6 +2085,32 @@ struct FolderCreateRequest {
 enum FolderRequest {
     List(FolderListRequest),
     Create(FolderCreateRequest),
+}
+
+#[derive(Debug)]
+struct ContentMigrationListRequest {
+    course_id: CourseId,
+}
+
+#[derive(Debug)]
+struct ContentMigrationCreateRequest {
+    course_id: CourseId,
+    input: canvas_core::ContentMigrationCreateInput,
+    wait: bool,
+}
+
+#[derive(Debug)]
+struct ContentMigrationShowRequest {
+    course_id: CourseId,
+    migration_id: ContentMigrationId,
+    wait: bool,
+}
+
+#[derive(Debug)]
+enum ContentMigrationRequest {
+    List(ContentMigrationListRequest),
+    Create(ContentMigrationCreateRequest),
+    Show(ContentMigrationShowRequest),
 }
 
 #[derive(Debug)]
@@ -1817,6 +2209,37 @@ enum ReportRequest {
     GradebookExport(ReportExportRequest),
     SubmissionStatus(ReportExportRequest),
     CourseActivitySummary(CourseActivitySummaryRequest),
+    GradeChangeLog(ReportExportRequest),
+}
+
+#[derive(Debug)]
+enum GradebookRequest {
+    GradingPeriodList(GradingPeriodListRequest),
+    GradingPeriodShow(GradingPeriodShowRequest),
+    PostingPolicyGet(PostingPolicyRequest),
+    PostingPolicySet(PostingPolicyUpdateRequest),
+}
+
+#[derive(Debug)]
+struct GradingPeriodListRequest {
+    course_id: CourseId,
+}
+
+#[derive(Debug)]
+struct GradingPeriodShowRequest {
+    course_id: CourseId,
+    grading_period_id: GradingPeriodId,
+}
+
+#[derive(Debug)]
+struct PostingPolicyRequest {
+    course_id: CourseId,
+}
+
+#[derive(Debug)]
+struct PostingPolicyUpdateRequest {
+    course_id: CourseId,
+    policy: GradingPostingPolicy,
 }
 
 #[derive(Debug)]
@@ -1943,6 +2366,14 @@ fn run(cli: Cli) -> Result<(), CliError> {
             let request = CalendarEventRequest::try_from((command, &global))?;
             handle_calendar_event(request, &global)
         }
+        Command::Conference { command } => {
+            let request = ConferenceRequest::try_from((command, &global))?;
+            handle_conference(request, &global)
+        }
+        Command::Collaboration { command } => {
+            let request = CollaborationRequest::try_from((command, &global))?;
+            handle_collaboration(request, &global)
+        }
         Command::File { command } => {
             let request = FileRequest::try_from((command, &global))?;
             handle_file(request, &global)
@@ -1950,6 +2381,11 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Command::Folder { command } => {
             let request = FolderRequest::try_from((command, &global))?;
             handle_folder(request, &global)
+        }
+        Command::ContentMigration { command } => {
+            let request =
+                ContentMigrationRequest::try_from((command, &global))?;
+            handle_content_migration(request, &global)
         }
         Command::Announcement { command } => {
             let request = AnnouncementRequest::try_from((command, &global))?;
@@ -1974,6 +2410,10 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Command::Report { command } => {
             let request = ReportRequest::try_from((command, &global))?;
             handle_report(request, &global)
+        }
+        Command::Gradebook { command } => {
+            let request = GradebookRequest::try_from((command, &global))?;
+            handle_gradebook(request, &global)
         }
         Command::Ask { prompt } => handle_ask(&prompt, &global),
     }
@@ -3480,6 +3920,59 @@ fn handle_module(request: ModuleRequest, global: &GlobalOptions) -> Result<(), C
                 println!("Module publish state updated.");
             }
         }
+        ModuleRequest::RequirementList(request) => {
+            let planned = vec![PlannedAction {
+                action: "list module requirements",
+                risk: "reads module requirements",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("module requirement list", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let module = canvas_core::get_module(
+                &config,
+                request.course_id,
+                request.module_id,
+            )?;
+            let data = json!({
+                "status": "ok",
+                "course_id": request.course_id.get(),
+                "module": module_summary_json(&module),
+            });
+            emit_result("module requirement list", data, global);
+            if !global.quiet && !global.json {
+                println!("Module {} requirements loaded.", module.id);
+            }
+        }
+        ModuleRequest::RequirementUpdate(request) => {
+            let planned = vec![PlannedAction {
+                action: "update module requirements",
+                risk: "updates module requirements",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("module requirement update", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let module = canvas_core::update_module_requirements(
+                &config,
+                request.course_id,
+                request.module_id,
+                &request.input,
+            )?;
+            let data = json!({
+                "status": "updated",
+                "course_id": request.course_id.get(),
+                "module": module_summary_json(&module),
+            });
+            emit_result("module requirement update", data, global);
+            if !global.quiet && !global.json {
+                println!("Module {} requirements updated.", module.id);
+            }
+        }
     }
     Ok(())
 }
@@ -3732,6 +4225,203 @@ fn handle_calendar_event(
     Ok(())
 }
 
+fn handle_conference(
+    request: ConferenceRequest,
+    global: &GlobalOptions,
+) -> Result<(), CliError> {
+    let config = canvas_core::load_merged_config().map_err(CliError::Canvas)?;
+    match request {
+        ConferenceRequest::List(request) => {
+            let planned = vec![PlannedAction {
+                action: "list conferences",
+                risk: "low",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("conference list", &planned, global);
+                return Ok(());
+            }
+            let conferences =
+                canvas_core::list_conferences(&config, request.course_id)?;
+            let data = json!({
+                "conferences": conferences
+                    .iter()
+                    .map(conference_summary_json)
+                    .collect::<Vec<_>>(),
+            });
+            emit_result("conference list", data, global);
+            if !global.json && !global.quiet {
+                println!("Found {} conferences.", conferences.len());
+            }
+        }
+        ConferenceRequest::Create(request) => {
+            let planned = vec![PlannedAction {
+                action: "create conference",
+                risk: "creates remote conference",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("conference create", &planned, global);
+                return Ok(());
+            }
+            let conference = canvas_core::create_conference(
+                &config,
+                request.course_id,
+                &request.input,
+            )?;
+            let data = json!({
+                "conference": conference_summary_json(&conference),
+            });
+            emit_result("conference create", data, global);
+            if !global.json && !global.quiet {
+                println!("Conference created.");
+            }
+        }
+        ConferenceRequest::Update(request) => {
+            let planned = vec![PlannedAction {
+                action: "update conference",
+                risk: "updates remote conference",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("conference update", &planned, global);
+                return Ok(());
+            }
+            let conference = canvas_core::update_conference(
+                &config,
+                request.course_id,
+                request.conference_id,
+                &request.input,
+            )?;
+            let data = json!({
+                "conference": conference_summary_json(&conference),
+            });
+            emit_result("conference update", data, global);
+            if !global.json && !global.quiet {
+                println!("Conference updated.");
+            }
+        }
+        ConferenceRequest::Delete(request) => {
+            require_confirmation(global, "conference delete")?;
+            let planned = vec![PlannedAction {
+                action: "delete conference",
+                risk: "deletes remote conference",
+                requires_confirmation: true,
+            }];
+            if global.explain {
+                emit_plan("conference delete", &planned, global);
+                return Ok(());
+            }
+            let conference = canvas_core::delete_conference(
+                &config,
+                request.course_id,
+                request.conference_id,
+            )?;
+            let data = json!({
+                "conference": conference_summary_json(&conference),
+            });
+            emit_result("conference delete", data, global);
+            if !global.json && !global.quiet {
+                println!("Conference deleted.");
+            }
+        }
+    }
+    Ok(())
+}
+
+fn handle_collaboration(
+    request: CollaborationRequest,
+    global: &GlobalOptions,
+) -> Result<(), CliError> {
+    match request {
+        CollaborationRequest::List(request) => {
+            let planned = vec![PlannedAction {
+                action: "list collaborations",
+                risk: "none",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("collaboration list", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let collaborations =
+                canvas_core::list_collaborations(&config, request.course_id)?;
+            emit_result(
+                "collaboration list",
+                json!({
+                    "status": "ok",
+                    "course_id": request.course_id.get(),
+                    "collaborations": collaborations
+                        .iter()
+                        .map(collaboration_summary_json)
+                        .collect::<Vec<_>>(),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Found {} collaborations.", collaborations.len());
+            }
+        }
+        CollaborationRequest::Create(request) => {
+            let planned = vec![PlannedAction {
+                action: "create collaboration",
+                risk: "creates remote collaboration",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("collaboration create", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let collaboration = canvas_core::create_collaboration(
+                &config,
+                request.course_id,
+                &request.input,
+            )?;
+            emit_result(
+                "collaboration create",
+                json!({
+                    "status": "created",
+                    "course_id": request.course_id.get(),
+                    "collaboration": collaboration_summary_json(&collaboration),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Collaboration created.");
+            }
+        }
+        CollaborationRequest::Delete(request) => {
+            let planned = vec![PlannedAction {
+                action: "delete collaboration",
+                risk: "deletes remote collaboration",
+                requires_confirmation: true,
+            }];
+            if global.explain {
+                emit_plan("collaboration delete", &planned, global);
+                return Ok(());
+            }
+            require_confirmation(global, "collaboration delete")?;
+            let config = canvas_core::load_merged_config()?;
+            let collaboration =
+                canvas_core::delete_collaboration(&config, request.collaboration_id)?;
+            emit_result(
+                "collaboration delete",
+                json!({
+                    "status": "deleted",
+                    "collaboration": collaboration_summary_json(&collaboration),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Collaboration deleted.");
+            }
+        }
+    }
+    Ok(())
+}
+
 fn handle_file(request: FileRequest, global: &GlobalOptions) -> Result<(), CliError> {
     match request {
         FileRequest::List(request) => {
@@ -3868,6 +4558,133 @@ fn handle_folder(request: FolderRequest, global: &GlobalOptions) -> Result<(), C
             if !global.quiet && !global.json {
                 println!("Folder created.");
             }
+        }
+    }
+    Ok(())
+}
+
+fn handle_content_migration(
+    request: ContentMigrationRequest,
+    global: &GlobalOptions,
+) -> Result<(), CliError> {
+    match request {
+        ContentMigrationRequest::List(request) => {
+            let planned = vec![PlannedAction {
+                action: "list content migrations",
+                risk: "none",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("content-migration list", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let migrations =
+                canvas_core::list_content_migrations(&config, request.course_id)?;
+            let data = json!({
+                "status": "ok",
+                "course_id": request.course_id.get(),
+                "migrations": migrations
+                    .iter()
+                    .map(|migration| content_migration_summary_json(migration, None))
+                    .collect::<Vec<_>>(),
+            });
+            emit_result("content-migration list", data, global);
+            if !global.quiet && !global.json {
+                println!("Found {} content migrations.", migrations.len());
+            }
+        }
+        ContentMigrationRequest::Create(request) => {
+            let planned = vec![PlannedAction {
+                action: "create content migration",
+                risk: "imports remote content",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("content-migration create", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let mut migration = canvas_core::create_content_migration(
+                &config,
+                request.course_id,
+                &request.input,
+            )?;
+            if request.wait {
+                let migration_id = canvas_core::parse_content_migration_id(
+                    &migration.id.to_string(),
+                )?;
+                migration = canvas_core::wait_for_content_migration(
+                    &config,
+                    request.course_id,
+                    migration_id,
+                    canvas_core::ContentMigrationWaitOptions::default(),
+                )?;
+            }
+            let progress = match migration.progress_url.as_deref() {
+                Some(url) => {
+                    Some(canvas_core::get_content_migration_progress(&config, url)?)
+                }
+                None => None,
+            };
+            emit_result(
+                "content-migration create",
+                json!({
+                    "status": "created",
+                    "course_id": request.course_id.get(),
+                    "migration": content_migration_summary_json(
+                        &migration,
+                        progress.as_ref(),
+                    ),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Content migration created.");
+            }
+        }
+        ContentMigrationRequest::Show(request) => {
+            let planned = vec![PlannedAction {
+                action: "show content migration",
+                risk: "none",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("content-migration show", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let mut migration = canvas_core::get_content_migration(
+                &config,
+                request.course_id,
+                request.migration_id,
+            )?;
+            if request.wait {
+                migration = canvas_core::wait_for_content_migration(
+                    &config,
+                    request.course_id,
+                    request.migration_id,
+                    canvas_core::ContentMigrationWaitOptions::default(),
+                )?;
+            }
+            let progress = match migration.progress_url.as_deref() {
+                Some(url) => {
+                    Some(canvas_core::get_content_migration_progress(&config, url)?)
+                }
+                None => None,
+            };
+            emit_result(
+                "content-migration show",
+                json!({
+                    "status": "ok",
+                    "course_id": request.course_id.get(),
+                    "migration": content_migration_summary_json(
+                        &migration,
+                        progress.as_ref(),
+                    ),
+                }),
+                global,
+            );
         }
     }
     Ok(())
@@ -4172,6 +4989,138 @@ fn handle_report(request: ReportRequest, global: &GlobalOptions) -> Result<(), C
             );
             if !global.quiet && !global.json {
                 println!("Course activity summary retrieved.");
+            }
+            Ok(())
+        }
+        ReportRequest::GradeChangeLog(request) => {
+            handle_report_export("report grade-change-log", request, global)
+        }
+    }
+}
+
+fn handle_gradebook(
+    request: GradebookRequest,
+    global: &GlobalOptions,
+) -> Result<(), CliError> {
+    match request {
+        GradebookRequest::GradingPeriodList(request) => {
+            let planned = vec![PlannedAction {
+                action: "list grading periods",
+                risk: "none",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("gradebook grading-period list", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let periods =
+                canvas_core::list_grading_periods(&config, request.course_id)?;
+            emit_result(
+                "gradebook grading-period list",
+                json!({
+                    "status": "ok",
+                    "course_id": request.course_id.get(),
+                    "grading_periods": periods
+                        .iter()
+                        .map(grading_period_summary_json)
+                        .collect::<Vec<_>>(),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Found {} grading periods.", periods.len());
+            }
+            Ok(())
+        }
+        GradebookRequest::GradingPeriodShow(request) => {
+            let planned = vec![PlannedAction {
+                action: "show grading period",
+                risk: "none",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("gradebook grading-period show", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let period = canvas_core::get_grading_period(
+                &config,
+                request.course_id,
+                request.grading_period_id,
+            )?;
+            emit_result(
+                "gradebook grading-period show",
+                json!({
+                    "status": "ok",
+                    "course_id": request.course_id.get(),
+                    "grading_period": grading_period_summary_json(&period),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Grading period {} retrieved.", period.id);
+            }
+            Ok(())
+        }
+        GradebookRequest::PostingPolicyGet(request) => {
+            let planned = vec![PlannedAction {
+                action: "get posting policy",
+                risk: "none",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("gradebook posting-policy get", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let policy =
+                canvas_core::get_posting_policy(&config, request.course_id)?;
+            emit_result(
+                "gradebook posting-policy get",
+                json!({
+                    "status": "ok",
+                    "course_id": request.course_id.get(),
+                    "posting_policy": posting_policy_summary_json(&policy),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Posting policy: {}.", policy.policy.as_str());
+            }
+            Ok(())
+        }
+        GradebookRequest::PostingPolicySet(request) => {
+            let planned = vec![PlannedAction {
+                action: "update posting policy",
+                risk: "updates gradebook posting policy",
+                requires_confirmation: true,
+            }];
+            if global.explain {
+                emit_plan("gradebook posting-policy set", &planned, global);
+                return Ok(());
+            }
+            require_confirmation(global, "gradebook posting-policy set")?;
+            let config = canvas_core::load_merged_config()?;
+            let policy = canvas_core::update_posting_policy(
+                &config,
+                request.course_id,
+                request.policy,
+            )?;
+            emit_result(
+                "gradebook posting-policy set",
+                json!({
+                    "status": "updated",
+                    "course_id": request.course_id.get(),
+                    "posting_policy": posting_policy_summary_json(&policy),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!(
+                    "Posting policy updated to {}.",
+                    policy.policy.as_str()
+                );
             }
             Ok(())
         }
@@ -4665,6 +5614,50 @@ fn parse_assignment_overrides_input(
     Ok(Some(parsed))
 }
 
+fn parse_module_requirements_input(
+    requirements_json: Option<String>,
+    requirements_file: Option<PathBuf>,
+) -> Result<Option<canvas_models::ModuleRequirements>, CliError> {
+    if requirements_json.is_some() && requirements_file.is_some() {
+        return Err(CliError::Canvas(
+            canvas_core::CanvasError::InvalidModuleRequirement(
+                "multiple_sources".to_string(),
+            ),
+        ));
+    }
+    let raw = if let Some(raw) = requirements_json {
+        raw
+    } else if let Some(path) = requirements_file {
+        read_file_to_string(&path)?
+    } else {
+        return Ok(None);
+    };
+    let parsed = canvas_core::parse_module_requirements(&raw)?;
+    Ok(Some(parsed))
+}
+
+fn parse_module_prerequisites_input(
+    prerequisites_json: Option<String>,
+    prerequisites_file: Option<PathBuf>,
+) -> Result<Option<canvas_models::ModulePrerequisites>, CliError> {
+    if prerequisites_json.is_some() && prerequisites_file.is_some() {
+        return Err(CliError::Canvas(
+            canvas_core::CanvasError::InvalidModulePrerequisites(
+                "multiple_sources".to_string(),
+            ),
+        ));
+    }
+    let raw = if let Some(raw) = prerequisites_json {
+        raw
+    } else if let Some(path) = prerequisites_file {
+        read_file_to_string(&path)?
+    } else {
+        return Ok(None);
+    };
+    let parsed = canvas_core::parse_module_prerequisites(&raw)?;
+    Ok(Some(parsed))
+}
+
 fn parse_peer_review_settings_input(
     mode: Option<String>,
     assign_at: Option<String>,
@@ -4988,6 +5981,39 @@ fn calendar_event_summary_json(
     })
 }
 
+fn conference_summary_json(
+    conference: &canvas_core::ConferenceSummary,
+) -> Value {
+    json!({
+        "id": conference.id,
+        "title": conference.title,
+        "start_at": conference.start_at,
+        "duration": conference.duration,
+        "recording_enabled": conference.recording_enabled,
+    })
+}
+
+fn collaboration_summary_json(
+    collaboration: &canvas_core::CollaborationSummary,
+) -> Value {
+    json!({
+        "id": collaboration.id,
+        "collaboration_type": collaboration.collaboration_type,
+        "document_id": collaboration.document_id,
+        "document_url": collaboration.document_url,
+        "user_id": collaboration.user_id,
+        "context_id": collaboration.context_id,
+        "context_type": collaboration.context_type,
+        "created_at": collaboration.created_at,
+        "updated_at": collaboration.updated_at,
+        "description": collaboration.description,
+        "title": collaboration.title,
+        "update_url": collaboration.update_url,
+        "user_name": collaboration.user_name,
+        "collaborator_ids": collaboration.collaborator_ids,
+    })
+}
+
 fn submission_summary_json(submission: &canvas_core::SubmissionSummary) -> Value {
     json!({
         "id": submission.id,
@@ -5119,6 +6145,46 @@ fn module_summary_json(module: &canvas_core::ModuleSummary) -> Value {
         "workflow_state": module.workflow_state,
         "items_count": module.items_count,
         "html_url": module.html_url,
+        "requirements": module
+            .completion_requirements
+            .as_ref()
+            .map(|requirements| {
+                requirements
+                    .iter()
+                    .map(module_requirement_summary_json)
+                    .collect::<Vec<_>>()
+            }),
+        "prerequisites": module
+            .prerequisites
+            .as_ref()
+            .map(|prerequisites| {
+                prerequisites
+                    .iter()
+                    .map(module_prerequisite_summary_json)
+                    .collect::<Vec<_>>()
+            }),
+        "unlock_at": module.unlock_at,
+        "require_sequential_progress": module.require_sequential_progress,
+    })
+}
+
+fn module_requirement_summary_json(
+    requirement: &canvas_core::ModuleRequirementSummary,
+) -> Value {
+    json!({
+        "item_id": requirement.item_id,
+        "type": requirement.requirement_type,
+        "min_score": requirement.min_score,
+    })
+}
+
+fn module_prerequisite_summary_json(
+    prerequisite: &canvas_core::ModulePrerequisiteSummary,
+) -> Value {
+    json!({
+        "id": prerequisite.id,
+        "name": prerequisite.name,
+        "type": prerequisite.prerequisite_type,
     })
 }
 
@@ -5155,6 +6221,36 @@ fn folder_summary_json(folder: &canvas_core::FolderSummary) -> Value {
         "created_at": folder.created_at,
         "updated_at": folder.updated_at,
         "files_count": folder.files_count,
+    })
+}
+
+fn content_migration_progress_json(
+    progress: &canvas_core::ContentMigrationProgress,
+) -> Value {
+    json!({
+        "completion": progress.completion,
+        "workflow_state": progress.workflow_state,
+        "message": progress.message,
+    })
+}
+
+fn content_migration_summary_json(
+    migration: &canvas_core::ContentMigrationSummary,
+    progress: Option<&canvas_core::ContentMigrationProgress>,
+) -> Value {
+    json!({
+        "migration_id": migration.id,
+        "migration_type": migration
+            .migration_type
+            .as_ref()
+            .map(|kind| kind.as_str()),
+        "migration_type_title": migration.migration_type_title,
+        "workflow_state": migration.workflow_state.as_str(),
+        "progress_url": migration.progress_url,
+        "started_at": migration.started_at,
+        "finished_at": migration.finished_at,
+        "user_id": migration.user_id,
+        "progress": progress.map(content_migration_progress_json),
     })
 }
 
@@ -5213,6 +6309,36 @@ fn report_summary_json(report: &canvas_core::ReportSummary) -> Value {
         "started_at": report.started_at,
         "ended_at": report.ended_at,
         "updated_at": report.updated_at,
+    })
+}
+
+fn grading_period_summary_json(
+    period: &canvas_core::GradingPeriodSummary,
+) -> Value {
+    json!({
+        "id": period.id,
+        "title": period.title,
+        "start_date": period.start_date,
+        "end_date": period.end_date,
+        "close_date": period.close_date,
+        "weight": period.weight,
+        "is_closed": period.is_closed,
+    })
+}
+
+fn posting_policy_summary_json(
+    policy: &canvas_core::PostingPolicySummary,
+) -> Value {
+    json!({
+        "state": policy.policy.as_str(),
+        "scope": posting_policy_scope_json(policy.scope),
+    })
+}
+
+fn posting_policy_scope_json(scope: canvas_core::PostingPolicyScope) -> Value {
+    json!({
+        "type": scope.as_str(),
+        "course_id": scope.course_id().get(),
     })
 }
 
@@ -5661,7 +6787,27 @@ fn schema_definition() -> Value {
                     "command": { "type": "string" },
                     "data": { "type": "object" },
                 },
-                "required": ["ok", "schema_version", "command", "data"],        
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "module_requirement_list": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "module_requirement_update": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
             },
             "tool_list": {
                 "type": "object",
@@ -5694,6 +6840,46 @@ fn schema_definition() -> Value {
                 "required": ["ok", "schema_version", "command", "data"],
             },
             "calendar_mutation": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],        
+            },
+            "conference_list": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "conference_mutation": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "collaboration_list": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "collaboration_mutation": {
                 "type": "object",
                 "properties": {
                     "ok": { "type": "boolean" },
@@ -5744,6 +6930,26 @@ fn schema_definition() -> Value {
                 "required": ["ok", "schema_version", "command", "data"],
             },
             "folder_create": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],        
+            },
+            "content_migration_list": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "content_migration_mutation": {
                 "type": "object",
                 "properties": {
                     "ok": { "type": "boolean" },
@@ -5843,6 +7049,46 @@ fn schema_definition() -> Value {
                 },
                 "required": ["ok", "schema_version", "command", "data"],
             },
+            "gradebook_grading_period_list": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "gradebook_grading_period_show": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "gradebook_posting_policy_get": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "gradebook_posting_policy_set": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
             "course_activity_summary": {
                 "type": "object",
                 "properties": {
@@ -5907,6 +7153,9 @@ fn error_code(error: &CliError) -> &'static str {
         CliError::InvalidReportFormat(_) => "invalid_report_format",
         CliError::Canvas(canvas_error) => match canvas_error {
             canvas_core::CanvasError::InvalidCourseId(_) => "invalid_course_id",
+            canvas_core::CanvasError::InvalidGradingPeriodId(_) => {
+                "invalid_grading_period_id"
+            }
             canvas_core::CanvasError::InvalidAssignmentId(_) => "invalid_assignment_id",
             canvas_core::CanvasError::InvalidAssignmentName(_) => {
                 "invalid_assignment_name"
@@ -5982,6 +7231,12 @@ fn error_code(error: &CliError) -> &'static str {
             canvas_core::CanvasError::InvalidCalendarEventId(_) => {
                 "invalid_calendar_event_id"
             }
+            canvas_core::CanvasError::InvalidConferenceId(_) => {
+                "invalid_conference_id"
+            }
+            canvas_core::CanvasError::InvalidCollaborationId(_) => {
+                "invalid_collaboration_id"
+            }
             canvas_core::CanvasError::InvalidSectionId(_) => "invalid_section_id",
             canvas_core::CanvasError::InvalidExternalToolId(_) => "invalid_external_tool_id",
             canvas_core::CanvasError::InvalidExternalToolName(_) => {
@@ -6002,13 +7257,43 @@ fn error_code(error: &CliError) -> &'static str {
             canvas_core::CanvasError::InvalidCalendarEventTitle(_) => {
                 "invalid_calendar_event_title"
             }
+            canvas_core::CanvasError::InvalidConferenceTitle(_) => {
+                "invalid_conference_title"
+            }
+            canvas_core::CanvasError::InvalidCollaborationTitle(_) => {
+                "invalid_collaboration_title"
+            }
+            canvas_core::CanvasError::InvalidCollaborationType(_) => {
+                "invalid_collaboration_type"
+            }
+            canvas_core::CanvasError::InvalidCollaborators(_) => {
+                "invalid_collaborators"
+            }
+            canvas_core::CanvasError::InvalidConferenceDescription(_) => {
+                "invalid_conference_description"
+            }
+            canvas_core::CanvasError::InvalidConferenceDuration(_) => {
+                "invalid_conference_duration"
+            }
             canvas_core::CanvasError::InvalidUserId(_) => "invalid_user_id",
             canvas_core::CanvasError::InvalidSubmissionId(_) => "invalid_submission_id",
             canvas_core::CanvasError::InvalidPageId(_) => "invalid_page_id",
             canvas_core::CanvasError::InvalidPageTitle(_) => "invalid_page_title",
             canvas_core::CanvasError::InvalidPageBody(_) => "invalid_page_body",
             canvas_core::CanvasError::InvalidModuleId(_) => "invalid_module_id",
+            canvas_core::CanvasError::InvalidModuleItemId(_) => {
+                "invalid_module_item_id"
+            }
             canvas_core::CanvasError::InvalidModuleName(_) => "invalid_module_name",
+            canvas_core::CanvasError::InvalidModuleRequirementType(_) => {
+                "invalid_module_requirement_type"
+            }
+            canvas_core::CanvasError::InvalidModuleRequirement(_) => {
+                "invalid_module_requirement"
+            }
+            canvas_core::CanvasError::InvalidModulePrerequisites(_) => {
+                "invalid_module_prerequisites"
+            }
             canvas_core::CanvasError::InvalidFileId(_) => "invalid_file_id",
             canvas_core::CanvasError::InvalidFolderId(_) => "invalid_folder_id",
             canvas_core::CanvasError::InvalidFolderName(_) => "invalid_folder_name",
@@ -6044,9 +7329,21 @@ fn error_code(error: &CliError) -> &'static str {
             }
             canvas_core::CanvasError::InvalidCourseVisibility(_) => "invalid_course_visibility",
             canvas_core::CanvasError::InvalidGradingSchemeId(_) => "invalid_grading_scheme_id",
+            canvas_core::CanvasError::InvalidContentMigrationId(_) => {
+                "invalid_content_migration_id"
+            }
+            canvas_core::CanvasError::InvalidContentMigrationType(_) => {
+                "invalid_content_migration_type"
+            }
+            canvas_core::CanvasError::InvalidContentMigrationCreate(_) => {
+                "invalid_content_migration_create"
+            }
             canvas_core::CanvasError::InvalidReportType(_) => "invalid_report_type",
             canvas_core::CanvasError::InvalidCourseDates(_) => "invalid_course_dates",
             canvas_core::CanvasError::InvalidCourseUpdate(_) => "invalid_course_update",
+            canvas_core::CanvasError::GradingPeriodNotFound(_) => {
+                "grading_period_not_found"
+            }
             canvas_core::CanvasError::InvalidAssignmentUpdate(_) => {
                 "invalid_assignment_update"
             }
@@ -6054,6 +7351,9 @@ fn error_code(error: &CliError) -> &'static str {
             canvas_core::CanvasError::InvalidQuizUpdate(_) => "invalid_quiz_update",
             canvas_core::CanvasError::InvalidPageUpdate(_) => "invalid_page_update",
             canvas_core::CanvasError::InvalidModuleUpdate(_) => "invalid_module_update",
+            canvas_core::CanvasError::InvalidModuleRequirementUpdate(_) => {
+                "invalid_module_requirement_update"
+            }
             canvas_core::CanvasError::InvalidModuleReorder(_) => "invalid_module_reorder",
             canvas_core::CanvasError::InvalidRubricUpdate(_) => "invalid_rubric_update",
             canvas_core::CanvasError::InvalidCalendarEventCreate(_) => {
@@ -6067,6 +7367,12 @@ fn error_code(error: &CliError) -> &'static str {
                 "invalid_quiz_availability"
             }
             canvas_core::CanvasError::InvalidFileUpload(_) => "invalid_file_upload",
+            canvas_core::CanvasError::ContentMigrationFailed(_) => {
+                "content_migration_failed"
+            }
+            canvas_core::CanvasError::ContentMigrationTimeout(_) => {
+                "content_migration_timeout"
+            }
             canvas_core::CanvasError::ReportNotReady(_) => "report_not_ready",
             canvas_core::CanvasError::ReportDownloadFailed(_) => "report_download_failed",
             canvas_core::CanvasError::ReportTimeout(_) => "report_timeout",
@@ -6075,6 +7381,9 @@ fn error_code(error: &CliError) -> &'static str {
             }
             canvas_core::CanvasError::InvalidCalendarEventContext(_) => {
                 "invalid_calendar_event_context"
+            }
+            canvas_core::CanvasError::InvalidConferenceUpdate(_) => {
+                "invalid_conference_update"
             }
             canvas_core::CanvasError::InvalidRubricAssociationTarget(_) => {
                 "invalid_rubric_association_target"
@@ -6103,6 +7412,9 @@ fn error_details(error: &CliError) -> Value {
         CliError::InvalidReportFormat(detail) => json!({ "detail": detail }),
         CliError::Canvas(canvas_error) => match canvas_error {
             canvas_core::CanvasError::InvalidCourseId(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidGradingPeriodId(raw) => {
+                json!({ "input": raw })
+            }
             canvas_core::CanvasError::InvalidAssignmentId(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidAssignmentName(raw) => {
                 json!({ "input": raw })
@@ -6182,6 +7494,12 @@ fn error_details(error: &CliError) -> Value {
             canvas_core::CanvasError::InvalidCalendarEventId(raw) => {
                 json!({ "input": raw })
             }
+            canvas_core::CanvasError::InvalidConferenceId(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidCollaborationId(raw) => {
+                json!({ "input": raw })
+            }
             canvas_core::CanvasError::InvalidSectionId(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidExternalToolId(raw) => {
                 json!({ "input": raw })
@@ -6204,13 +7522,43 @@ fn error_details(error: &CliError) -> Value {
             canvas_core::CanvasError::InvalidCalendarEventTitle(raw) => {
                 json!({ "input": raw })
             }
+            canvas_core::CanvasError::InvalidConferenceTitle(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidCollaborationTitle(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidCollaborationType(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidCollaborators(detail) => {
+                json!({ "detail": detail })
+            }
+            canvas_core::CanvasError::InvalidConferenceDescription(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidConferenceDuration(raw) => {
+                json!({ "input": raw })
+            }
             canvas_core::CanvasError::InvalidUserId(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidSubmissionId(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidPageId(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidPageTitle(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidPageBody(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidModuleId(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidModuleItemId(raw) => {
+                json!({ "input": raw })
+            }
             canvas_core::CanvasError::InvalidModuleName(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidModuleRequirementType(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidModuleRequirement(detail) => {
+                json!({ "detail": detail })
+            }
+            canvas_core::CanvasError::InvalidModulePrerequisites(detail) => {
+                json!({ "detail": detail })
+            }
             canvas_core::CanvasError::InvalidFileId(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidFolderId(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidFolderName(raw) => json!({ "input": raw }),
@@ -6252,9 +7600,21 @@ fn error_details(error: &CliError) -> Value {
             }
             canvas_core::CanvasError::InvalidCourseVisibility(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidGradingSchemeId(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidContentMigrationId(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidContentMigrationType(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidContentMigrationCreate(detail) => {
+                json!({ "detail": detail })
+            }
             canvas_core::CanvasError::InvalidReportType(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidCourseDates(detail) => json!({ "detail": detail }),
             canvas_core::CanvasError::InvalidCourseUpdate(detail) => json!({ "detail": detail }),
+            canvas_core::CanvasError::GradingPeriodNotFound(id) => {
+                json!({ "grading_period_id": id })
+            }
             canvas_core::CanvasError::InvalidAssignmentUpdate(detail) => {
                 json!({ "detail": detail })
             }
@@ -6268,6 +7628,9 @@ fn error_details(error: &CliError) -> Value {
                 json!({ "detail": detail })
             }
             canvas_core::CanvasError::InvalidModuleUpdate(detail) => {
+                json!({ "detail": detail })
+            }
+            canvas_core::CanvasError::InvalidModuleRequirementUpdate(detail) => {
                 json!({ "detail": detail })
             }
             canvas_core::CanvasError::InvalidModuleReorder(detail) => {
@@ -6285,6 +7648,9 @@ fn error_details(error: &CliError) -> Value {
             canvas_core::CanvasError::InvalidCalendarEventContext(detail) => {
                 json!({ "detail": detail })
             }
+            canvas_core::CanvasError::InvalidConferenceUpdate(detail) => {
+                json!({ "detail": detail })
+            }
             canvas_core::CanvasError::InvalidRubricAssociationTarget(detail) => {
                 json!({ "detail": detail })
             }
@@ -6298,6 +7664,12 @@ fn error_details(error: &CliError) -> Value {
                 json!({ "detail": detail })
             }
             canvas_core::CanvasError::InvalidFileUpload(detail) => {
+                json!({ "detail": detail })
+            }
+            canvas_core::CanvasError::ContentMigrationFailed(detail) => {
+                json!({ "detail": detail })
+            }
+            canvas_core::CanvasError::ContentMigrationTimeout(detail) => {
                 json!({ "detail": detail })
             }
             canvas_core::CanvasError::ReportNotReady(detail) => {
@@ -7446,6 +8818,73 @@ impl TryFrom<(ModuleCommand, &GlobalOptions)> for ModuleRequest {
                     publish_state,
                 }))
             }
+            ModuleCommand::Requirement { command } => match command {
+                ModuleRequirementCommand::List { course, module } => {
+                    let course_id = match course {
+                        Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                        None => global.course,
+                    }
+                    .ok_or(CliError::MissingCourseId)?;
+                    let module_id = canvas_core::parse_module_id(&module)?;
+                    Ok(ModuleRequest::RequirementList(ModuleRequirementListRequest {
+                        course_id,
+                        module_id,
+                    }))
+                }
+                ModuleRequirementCommand::Update {
+                    course,
+                    module,
+                    requirements_json,
+                    requirements_file,
+                    prerequisites_json,
+                    prerequisites_file,
+                    unlock_at,
+                    sequential_progress,
+                } => {
+                    let course_id = match course {
+                        Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                        None => global.course,
+                    }
+                    .ok_or(CliError::MissingCourseId)?;
+                    let module_id = canvas_core::parse_module_id(&module)?;
+                    let requirements = parse_module_requirements_input(
+                        requirements_json,
+                        requirements_file,
+                    )?;
+                    let prerequisites = parse_module_prerequisites_input(
+                        prerequisites_json,
+                        prerequisites_file,
+                    )?;
+                    let unlock_at = match unlock_at {
+                        Some(raw) => Some(canvas_core::parse_due_date(&raw)?),
+                        None => None,
+                    };
+                    let sequential_progress =
+                        sequential_progress.map(SequentialProgressSetting::as_bool);
+                    let unlock_rules = if unlock_at.is_some()
+                        || sequential_progress.is_some()
+                    {
+                        Some(canvas_models::ModuleUnlockRules::new(
+                            unlock_at,
+                            sequential_progress,
+                        ))
+                    } else {
+                        None
+                    };
+                    let input = canvas_core::ModuleRequirementsUpdateInput::new(
+                        requirements,
+                        prerequisites,
+                        unlock_rules,
+                    )?;
+                    Ok(ModuleRequest::RequirementUpdate(
+                        ModuleRequirementUpdateRequest {
+                            course_id,
+                            module_id,
+                            input,
+                        },
+                    ))
+                }
+            },
         }
     }
 }
@@ -7670,6 +9109,211 @@ impl TryFrom<(CalendarCommand, &GlobalOptions)> for CalendarEventRequest {
     }
 }
 
+impl TryFrom<(ConferenceCommand, &GlobalOptions)> for ConferenceRequest {
+    type Error = CliError;
+
+    fn try_from(
+        input: (ConferenceCommand, &GlobalOptions),
+    ) -> Result<Self, Self::Error> {
+        let (command, global) = input;
+        match command {
+            ConferenceCommand::List { course } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                Ok(ConferenceRequest::List(ConferenceListRequest { course_id }))
+            }
+            ConferenceCommand::Create {
+                course,
+                title,
+                description,
+                start_at,
+                duration,
+                recording,
+            } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let title = canvas_core::parse_conference_title(&title)?;
+                let description = match description {
+                    Some(raw) => Some(canvas_core::parse_conference_description(
+                        &raw,
+                    )?),
+                    None => None,
+                };
+                let start_at = match start_at {
+                    Some(raw) => {
+                        Some(canvas_core::parse_event_date_time(&raw)?)
+                    }
+                    None => None,
+                };
+                let duration = match duration {
+                    Some(raw) => {
+                        Some(canvas_core::parse_conference_duration(&raw)?)
+                    }
+                    None => None,
+                };
+                let schedule = if start_at.is_some() || duration.is_some() {
+                    Some(canvas_core::ConferenceSchedule::new(
+                        start_at, duration,
+                    ))
+                } else {
+                    None
+                };
+                let recording_enabled = recording.map(RecordingSetting::as_bool);
+                Ok(ConferenceRequest::Create(ConferenceCreateRequest {
+                    course_id,
+                    input: canvas_core::ConferenceCreateInput::new(
+                        title,
+                        description,
+                        schedule,
+                        recording_enabled,
+                    ),
+                }))
+            }
+            ConferenceCommand::Update {
+                course,
+                conference,
+                title,
+                description,
+                start_at,
+                duration,
+                recording,
+            } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let conference_id =
+                    canvas_core::parse_conference_id(&conference)?;
+                let title = match title {
+                    Some(raw) => Some(canvas_core::parse_conference_title(&raw)?),
+                    None => None,
+                };
+                let description = match description {
+                    Some(raw) => Some(canvas_core::parse_conference_description(
+                        &raw,
+                    )?),
+                    None => None,
+                };
+                let start_at = match start_at {
+                    Some(raw) => {
+                        Some(canvas_core::parse_event_date_time(&raw)?)
+                    }
+                    None => None,
+                };
+                let duration = match duration {
+                    Some(raw) => {
+                        Some(canvas_core::parse_conference_duration(&raw)?)
+                    }
+                    None => None,
+                };
+                let schedule = if start_at.is_some() || duration.is_some() {
+                    Some(canvas_core::ConferenceSchedule::new(
+                        start_at, duration,
+                    ))
+                } else {
+                    None
+                };
+                let recording_enabled = recording.map(RecordingSetting::as_bool);
+                let input = canvas_core::ConferenceUpdateInput::new(
+                    title,
+                    description,
+                    schedule,
+                    recording_enabled,
+                )?;
+                Ok(ConferenceRequest::Update(ConferenceUpdateRequest {
+                    course_id,
+                    conference_id,
+                    input,
+                }))
+            }
+            ConferenceCommand::Delete { course, conference } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let conference_id =
+                    canvas_core::parse_conference_id(&conference)?;
+                Ok(ConferenceRequest::Delete(ConferenceDeleteRequest {
+                    course_id,
+                    conference_id,
+                }))
+            }
+        }
+    }
+}
+
+impl TryFrom<(CollaborationCommand, &GlobalOptions)> for CollaborationRequest {
+    type Error = CliError;
+
+    fn try_from(
+        input: (CollaborationCommand, &GlobalOptions),
+    ) -> Result<Self, Self::Error> {
+        let (command, global) = input;
+        match command {
+            CollaborationCommand::List { course } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                Ok(CollaborationRequest::List(CollaborationListRequest {
+                    course_id,
+                }))
+            }
+            CollaborationCommand::Create {
+                course,
+                title,
+                collaboration_type,
+                user_ids,
+                group_ids,
+            } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let title = canvas_core::parse_collaboration_title(&title)?;
+                let collaboration_type =
+                    canvas_core::parse_collaboration_type(&collaboration_type)?;
+                let mut collaborators = Vec::new();
+                for raw in user_ids {
+                    let user_id = canvas_core::parse_user_id(&raw)?;
+                    collaborators.push(canvas_core::Collaborator::user(user_id));
+                }
+                for raw in group_ids {
+                    let group_id = canvas_core::parse_group_id(&raw)?;
+                    collaborators.push(canvas_core::Collaborator::group(group_id));
+                }
+                let collaborators =
+                    canvas_core::Collaborators::new(collaborators)?;
+                let input = canvas_core::CollaborationCreateInput::new(
+                    title,
+                    collaboration_type,
+                    collaborators,
+                );
+                Ok(CollaborationRequest::Create(
+                    CollaborationCreateRequest { course_id, input },
+                ))
+            }
+            CollaborationCommand::Delete { collaboration } => {
+                let collaboration_id =
+                    canvas_core::parse_collaboration_id(&collaboration)?;
+                Ok(CollaborationRequest::Delete(
+                    CollaborationDeleteRequest { collaboration_id },
+                ))
+            }
+        }
+    }
+}
+
 impl TryFrom<(FileCommand, &GlobalOptions)> for FileRequest {
     type Error = CliError;
 
@@ -7756,6 +9400,96 @@ impl TryFrom<(FolderCommand, &GlobalOptions)> for FolderRequest {
                     course_id,
                     name,
                     parent_folder_id,
+                }))
+            }
+        }
+    }
+}
+
+impl TryFrom<(ContentMigrationCommand, &GlobalOptions)> for ContentMigrationRequest {
+    type Error = CliError;
+
+    fn try_from(
+        input: (ContentMigrationCommand, &GlobalOptions),
+    ) -> Result<Self, Self::Error> {
+        let (command, global) = input;
+        match command {
+            ContentMigrationCommand::List { course } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                Ok(ContentMigrationRequest::List(ContentMigrationListRequest {
+                    course_id,
+                }))
+            }
+            ContentMigrationCommand::Create {
+                course,
+                migration_type,
+                source_course,
+                file,
+                wait,
+            } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let migration_type =
+                    canvas_core::parse_content_migration_type(&migration_type)?;
+                let input = match migration_type {
+                    canvas_models::ContentMigrationType::CourseCopy => {
+                        let source_course = source_course.ok_or_else(|| {
+                            CliError::Canvas(
+                                canvas_core::CanvasError::InvalidContentMigrationCreate(
+                                    "missing_source_course".to_string(),
+                                ),
+                            )
+                        })?;
+                        let source_course_id =
+                            canvas_core::parse_course_id(&source_course)?;
+                        canvas_core::ContentMigrationCreateInput::CourseCopy {
+                            source_course_id,
+                        }
+                    }
+                    canvas_models::ContentMigrationType::FileImport => {
+                        let file = file.ok_or_else(|| {
+                            CliError::Canvas(
+                                canvas_core::CanvasError::InvalidContentMigrationCreate(
+                                    "missing_file".to_string(),
+                                ),
+                            )
+                        })?;
+                        canvas_core::ContentMigrationCreateInput::FileImport {
+                            file,
+                        }
+                    }
+                };
+                Ok(ContentMigrationRequest::Create(
+                    ContentMigrationCreateRequest {
+                        course_id,
+                        input,
+                        wait,
+                    },
+                ))
+            }
+            ContentMigrationCommand::Show {
+                course,
+                migration,
+                wait,
+            } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let migration_id =
+                    canvas_core::parse_content_migration_id(&migration)?;
+                Ok(ContentMigrationRequest::Show(ContentMigrationShowRequest {
+                    course_id,
+                    migration_id,
+                    wait,
                 }))
             }
         }
@@ -8002,6 +9736,91 @@ impl TryFrom<(ReportCommand, &GlobalOptions)> for ReportRequest {
                     CourseActivitySummaryRequest { course_id },
                 ))
             }
+            ReportCommand::GradeChangeLog {
+                course,
+                format,
+                output,
+            } => {
+                if format == ReportFormat::Json && output.is_some() {
+                    return Err(CliError::InvalidReportFormat(
+                        "output_requires_csv".to_string(),
+                    ));
+                }
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                Ok(ReportRequest::GradeChangeLog(ReportExportRequest {
+                    course_id,
+                    report_type: ReportType::GradeChangeLog,
+                    format,
+                    output,
+                }))
+            }
+        }
+    }
+}
+
+impl TryFrom<(GradebookCommand, &GlobalOptions)> for GradebookRequest {
+    type Error = CliError;
+
+    fn try_from(
+        input: (GradebookCommand, &GlobalOptions),
+    ) -> Result<Self, Self::Error> {
+        let (command, global) = input;
+        match command {
+            GradebookCommand::GradingPeriod { command } => match command {
+                GradingPeriodCommand::List { course } => {
+                    let course_id = match course {
+                        Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                        None => global.course,
+                    }
+                    .ok_or(CliError::MissingCourseId)?;
+                    Ok(GradebookRequest::GradingPeriodList(
+                        GradingPeriodListRequest { course_id },
+                    ))
+                }
+                GradingPeriodCommand::Show { course, period } => {
+                    let course_id = match course {
+                        Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                        None => global.course,
+                    }
+                    .ok_or(CliError::MissingCourseId)?;
+                    let grading_period_id =
+                        canvas_core::parse_grading_period_id(&period)?;
+                    Ok(GradebookRequest::GradingPeriodShow(
+                        GradingPeriodShowRequest {
+                            course_id,
+                            grading_period_id,
+                        },
+                    ))
+                }
+            },
+            GradebookCommand::PostingPolicy { command } => match command {
+                PostingPolicyCommand::Get { course } => {
+                    let course_id = match course {
+                        Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                        None => global.course,
+                    }
+                    .ok_or(CliError::MissingCourseId)?;
+                    Ok(GradebookRequest::PostingPolicyGet(
+                        PostingPolicyRequest { course_id },
+                    ))
+                }
+                PostingPolicyCommand::Set { course, policy } => {
+                    let course_id = match course {
+                        Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                        None => global.course,
+                    }
+                    .ok_or(CliError::MissingCourseId)?;
+                    let policy =
+                        canvas_core::parse_grading_posting_policy(&policy)?;
+                    Ok(GradebookRequest::PostingPolicySet(
+                        PostingPolicyUpdateRequest { course_id, policy },
+                    ))
+                }
+            },
         }
     }
 }

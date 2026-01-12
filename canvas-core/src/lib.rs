@@ -2,10 +2,14 @@ mod auth;
 mod api;
 mod assignments;
 mod calendar;
+mod conferences;
+mod collaborations;
 mod config;
 mod courses;
 mod content;
+mod content_migrations;
 mod external_tools;
+mod gradebook;
 mod people;
 mod reports;
 mod quizzes;
@@ -16,18 +20,23 @@ mod question_banks;
 use canvas_models::{
     AllDayDate, AssignmentId, AssignmentName, AssignmentOverride, AssignmentOverrideDates,
     AssignmentOverrideTarget, AssignmentOverrides, CalendarEventContext, CalendarEventId,
-    CalendarEventTitle, CanvasHost, CanvasToken, CourseDates, CourseId, CourseVisibility,
-    DiscussionId, DueDate, EventDateTime, ExternalToolConfigUrl, ExternalToolId,
-    ExternalToolName, ExternalToolPlacement, FileId, FolderId, FolderName,
-    GradingPostingPolicy, GradingSchemeId, GroupAssignmentMode, GroupAssignmentSettings,
-    GroupCategoryId, GroupId, GroupName, MessageBody, MessageSubject, ModuleId,
-    ModuleName, MutedState, OutcomeDescription, OutcomeGroupId, OutcomeId,
-    OutcomeTitle, OverrideStudentIds, PageBody, PageId, PageTitle, PeerReviewMode,
-    PeerReviewSettings, PointsPossible, PublishState, QuestionBankId, QuestionBankTitle,
-    QuestionId, QuestionName, QuestionText, QuestionType, QuizAccessCode,
-    QuizAvailability, QuizId, QuizSubmissionId, QuizTimeLimit, QuizTitle,
-    RecipientIds, ReportType, RubricAssessment, RubricAssociationId, RubricId,
-    RubricSelection, RubricTitle, Score, SectionId, SubmissionId, UserId, UserRole,
+    CalendarEventTitle, CanvasHost, CanvasToken, ConferenceDescription, ConferenceDuration,
+    CollaborationId, CollaborationTitle, CollaborationType, ConferenceId,
+    ConferenceTitle, ContentMigrationId, ContentMigrationType, CourseDates,
+    CourseId, CourseVisibility, DiscussionId, DueDate, EventDateTime,
+    ExternalToolConfigUrl, ExternalToolId, ExternalToolName, ExternalToolPlacement,
+    FileId, FolderId, FolderName, GradingPostingPolicy, GradingSchemeId,
+    GroupAssignmentMode, GroupAssignmentSettings, GroupCategoryId, GroupId,
+    GroupName, MessageBody, MessageSubject, ModuleId, ModuleItemId, ModuleName,
+    ModulePrerequisites, ModuleRequirement, ModuleRequirementType, ModuleRequirements,
+    MutedState, OutcomeDescription,
+    OutcomeGroupId, OutcomeId, OutcomeTitle, OverrideStudentIds, PageBody, PageId,
+    PageTitle, PeerReviewMode, PeerReviewSettings, PointsPossible, PublishState,
+    QuestionBankId, QuestionBankTitle, QuestionId, QuestionName, QuestionText,
+    QuestionType, QuizAccessCode, QuizAvailability, QuizId, QuizSubmissionId,
+    QuizTimeLimit, QuizTitle, RecipientIds, ReportType, RubricAssessment,
+    RubricAssociationId, RubricId, RubricSelection, RubricTitle, Score, SectionId,
+    SubmissionId, UserId, UserRole,
 };
 use thiserror::Error;
 
@@ -44,21 +53,42 @@ pub use calendar::{
     update_calendar_event, CalendarEventCreateInput, CalendarEventSummary,
     CalendarEventTiming, CalendarEventUpdateInput,
 };
+pub use conferences::{
+    create_conference, delete_conference, list_conferences, update_conference,
+    ConferenceCreateInput, ConferenceSchedule, ConferenceSummary, ConferenceUpdateInput,
+};
+pub use collaborations::{
+    create_collaboration, delete_collaboration, list_collaborations,
+    CollaborationCreateInput, CollaborationSummary, Collaborator, Collaborators,
+};
 pub use config::{config_path, load_merged_config, write_config, AuthConfig, CanvasConfig, DefaultsConfig};
 pub use courses::{get_course, list_courses, persist_default_course, update_course, CourseSettingsUpdate, CourseSummary};
 pub use content::{
     create_announcement, create_discussion, create_folder, create_module,
-    create_page, delete_file, list_announcements, list_discussions, list_files,
-    list_folders, list_modules, list_pages, reorder_modules, update_module,
-    update_page, upload_file, AnnouncementSummary, DiscussionSummary, FileSummary,
-    FolderSummary, ModuleCreateInput, ModuleSummary, ModuleUpdateInput,
+    create_page, delete_file, get_module, list_announcements, list_discussions,
+    list_files, list_folders, list_modules, list_pages, reorder_modules,
+    update_module, update_module_requirements, update_page, upload_file,
+    AnnouncementSummary, DiscussionSummary, FileSummary, FolderSummary,
+    ModuleCreateInput, ModulePrerequisiteSummary, ModuleRequirementSummary,
+    ModuleRequirementsUpdateInput, ModuleSummary, ModuleUpdateInput,
     PageCreateInput, PageSummary, PageUpdateInput, UploadFileInput,
+};
+pub use content_migrations::{
+    create_content_migration, get_content_migration, get_content_migration_progress,
+    list_content_migrations, wait_for_content_migration, ContentMigrationCreateInput,
+    ContentMigrationProgress, ContentMigrationState, ContentMigrationSummary,
+    ContentMigrationTypeValue, ContentMigrationWaitOptions,
 };
 pub use external_tools::{
     create_external_tool, delete_external_tool, list_external_tools,
     update_external_tool, ExternalToolConfig, ExternalToolConfigJson,
     ExternalToolConfigXml, ExternalToolCreateInput, ExternalToolPlacementList,
     ExternalToolPlacementSettings, ExternalToolSummary, ExternalToolUpdateInput,
+};
+pub use gradebook::{
+    get_grading_period, get_posting_policy, list_grading_periods,
+    update_posting_policy, GradingPeriodSummary, PostingPolicyScope,
+    PostingPolicySummary,
 };
 pub use people::{
     create_group, list_groups, list_users, send_message, GroupSummary,
@@ -94,6 +124,8 @@ pub use reports::{
 pub enum CanvasError {
     #[error("invalid course id: {0}")]
     InvalidCourseId(String),
+    #[error("invalid grading period id: {0}")]
+    InvalidGradingPeriodId(String),
     #[error("invalid assignment id: {0}")]
     InvalidAssignmentId(String),
     #[error("invalid assignment name: {0}")]
@@ -160,6 +192,10 @@ pub enum CanvasError {
     InvalidQuestionJson(String),
     #[error("invalid calendar event id: {0}")]
     InvalidCalendarEventId(String),
+    #[error("invalid conference id: {0}")]
+    InvalidConferenceId(String),
+    #[error("invalid collaboration id: {0}")]
+    InvalidCollaborationId(String),
     #[error("invalid section id: {0}")]
     InvalidSectionId(String),
     #[error("invalid external tool id: {0}")]
@@ -176,6 +212,18 @@ pub enum CanvasError {
     InvalidExternalToolUpdate(String),
     #[error("invalid calendar event title: {0}")]
     InvalidCalendarEventTitle(String),
+    #[error("invalid conference title: {0}")]
+    InvalidConferenceTitle(String),
+    #[error("invalid collaboration title: {0}")]
+    InvalidCollaborationTitle(String),
+    #[error("invalid collaboration type: {0}")]
+    InvalidCollaborationType(String),
+    #[error("invalid collaborators: {0}")]
+    InvalidCollaborators(String),
+    #[error("invalid conference description: {0}")]
+    InvalidConferenceDescription(String),
+    #[error("invalid conference duration: {0}")]
+    InvalidConferenceDuration(String),
     #[error("invalid user id: {0}")]
     InvalidUserId(String),
     #[error("invalid submission id: {0}")]
@@ -188,8 +236,16 @@ pub enum CanvasError {
     InvalidPageBody(String),
     #[error("invalid module id: {0}")]
     InvalidModuleId(String),
+    #[error("invalid module item id: {0}")]
+    InvalidModuleItemId(String),
     #[error("invalid module name: {0}")]
     InvalidModuleName(String),
+    #[error("invalid module requirement type: {0}")]
+    InvalidModuleRequirementType(String),
+    #[error("invalid module requirement: {0}")]
+    InvalidModuleRequirement(String),
+    #[error("invalid module prerequisites: {0}")]
+    InvalidModulePrerequisites(String),
     #[error("invalid file id: {0}")]
     InvalidFileId(String),
     #[error("invalid folder id: {0}")]
@@ -236,12 +292,20 @@ pub enum CanvasError {
     InvalidCourseVisibility(String),
     #[error("invalid grading scheme id: {0}")]
     InvalidGradingSchemeId(String),
+    #[error("invalid content migration id: {0}")]
+    InvalidContentMigrationId(String),
+    #[error("invalid content migration type: {0}")]
+    InvalidContentMigrationType(String),
+    #[error("invalid content migration create: {0}")]
+    InvalidContentMigrationCreate(String),
     #[error("invalid report type: {0}")]
     InvalidReportType(String),
     #[error("invalid course dates: {0}")]
     InvalidCourseDates(String),
     #[error("invalid course update: {0}")]
     InvalidCourseUpdate(String),
+    #[error("grading period not found: {0}")]
+    GradingPeriodNotFound(u64),
     #[error("invalid assignment update: {0}")]
     InvalidAssignmentUpdate(String),
     #[error("invalid outcome update: {0}")]
@@ -252,6 +316,8 @@ pub enum CanvasError {
     InvalidPageUpdate(String),
     #[error("invalid module update: {0}")]
     InvalidModuleUpdate(String),
+    #[error("invalid module requirement update: {0}")]
+    InvalidModuleRequirementUpdate(String),
     #[error("invalid module reorder: {0}")]
     InvalidModuleReorder(String),
     #[error("invalid rubric update: {0}")]
@@ -262,6 +328,8 @@ pub enum CanvasError {
     InvalidCalendarEventUpdate(String),
     #[error("invalid calendar event context: {0}")]
     InvalidCalendarEventContext(String),
+    #[error("invalid conference update: {0}")]
+    InvalidConferenceUpdate(String),
     #[error("invalid rubric association target: {0}")]
     InvalidRubricAssociationTarget(String),
     #[error("missing assignment points for assignment id {0}")]
@@ -272,6 +340,10 @@ pub enum CanvasError {
     InvalidQuizAvailability(String),
     #[error("invalid file upload: {0}")]
     InvalidFileUpload(String),
+    #[error("content migration failed: {0}")]
+    ContentMigrationFailed(String),
+    #[error("content migration polling timed out: {0}")]
+    ContentMigrationTimeout(String),
     #[error("report not ready: {0}")]
     ReportNotReady(String),
     #[error("report download failed: {0}")]
@@ -301,6 +373,27 @@ pub enum CanvasError {
 pub fn parse_course_id(raw: &str) -> Result<CourseId, CanvasError> {
     raw.parse::<CourseId>()
         .map_err(|_| CanvasError::InvalidCourseId(raw.to_string()))
+}
+
+pub fn parse_content_migration_id(
+    raw: &str,
+) -> Result<ContentMigrationId, CanvasError> {
+    raw.parse::<ContentMigrationId>()
+        .map_err(|_| CanvasError::InvalidContentMigrationId(raw.to_string()))
+}
+
+pub fn parse_content_migration_type(
+    raw: &str,
+) -> Result<ContentMigrationType, CanvasError> {
+    raw.parse::<ContentMigrationType>()
+        .map_err(|_| CanvasError::InvalidContentMigrationType(raw.to_string()))
+}
+
+pub fn parse_grading_period_id(
+    raw: &str,
+) -> Result<canvas_models::GradingPeriodId, CanvasError> {
+    raw.parse::<canvas_models::GradingPeriodId>()
+        .map_err(|_| CanvasError::InvalidGradingPeriodId(raw.to_string()))
 }
 
 pub fn parse_assignment_id(raw: &str) -> Result<AssignmentId, CanvasError> {    
@@ -408,6 +501,18 @@ pub fn parse_calendar_event_id(
         .map_err(|_| CanvasError::InvalidCalendarEventId(raw.to_string()))
 }
 
+pub fn parse_conference_id(raw: &str) -> Result<ConferenceId, CanvasError> {
+    raw.parse::<ConferenceId>()
+        .map_err(|_| CanvasError::InvalidConferenceId(raw.to_string()))
+}
+
+pub fn parse_collaboration_id(
+    raw: &str,
+) -> Result<CollaborationId, CanvasError> {
+    raw.parse::<CollaborationId>()
+        .map_err(|_| CanvasError::InvalidCollaborationId(raw.to_string()))
+}
+
 pub fn parse_section_id(raw: &str) -> Result<SectionId, CanvasError> {
     raw.parse::<SectionId>()
         .map_err(|_| CanvasError::InvalidSectionId(raw.to_string()))
@@ -481,6 +586,41 @@ pub fn parse_calendar_event_title(
         .map_err(|_| CanvasError::InvalidCalendarEventTitle(raw.to_string()))
 }
 
+pub fn parse_conference_title(
+    raw: &str,
+) -> Result<ConferenceTitle, CanvasError> {
+    raw.parse::<ConferenceTitle>()
+        .map_err(|_| CanvasError::InvalidConferenceTitle(raw.to_string()))
+}
+
+pub fn parse_collaboration_title(
+    raw: &str,
+) -> Result<CollaborationTitle, CanvasError> {
+    raw.parse::<CollaborationTitle>()
+        .map_err(|_| CanvasError::InvalidCollaborationTitle(raw.to_string()))
+}
+
+pub fn parse_collaboration_type(
+    raw: &str,
+) -> Result<CollaborationType, CanvasError> {
+    raw.parse::<CollaborationType>()
+        .map_err(|_| CanvasError::InvalidCollaborationType(raw.to_string()))
+}
+
+pub fn parse_conference_description(
+    raw: &str,
+) -> Result<ConferenceDescription, CanvasError> {
+    raw.parse::<ConferenceDescription>()
+        .map_err(|_| CanvasError::InvalidConferenceDescription(raw.to_string()))
+}
+
+pub fn parse_conference_duration(
+    raw: &str,
+) -> Result<ConferenceDuration, CanvasError> {
+    raw.parse::<ConferenceDuration>()
+        .map_err(|_| CanvasError::InvalidConferenceDuration(raw.to_string()))
+}
+
 pub fn parse_user_id(raw: &str) -> Result<UserId, CanvasError> {
     raw.parse::<UserId>()
         .map_err(|_| CanvasError::InvalidUserId(raw.to_string()))
@@ -511,9 +651,144 @@ pub fn parse_module_id(raw: &str) -> Result<ModuleId, CanvasError> {
         .map_err(|_| CanvasError::InvalidModuleId(raw.to_string()))
 }
 
+pub fn parse_module_item_id(raw: &str) -> Result<ModuleItemId, CanvasError> {
+    raw.parse::<ModuleItemId>()
+        .map_err(|_| CanvasError::InvalidModuleItemId(raw.to_string()))
+}
+
 pub fn parse_module_name(raw: &str) -> Result<ModuleName, CanvasError> {
     raw.parse::<ModuleName>()
         .map_err(|_| CanvasError::InvalidModuleName(raw.to_string()))
+}
+
+pub fn parse_module_requirement_type(
+    raw: &str,
+) -> Result<ModuleRequirementType, CanvasError> {
+    raw.parse::<ModuleRequirementType>()
+        .map_err(|_| CanvasError::InvalidModuleRequirementType(raw.to_string()))
+}
+
+pub fn parse_module_requirements(
+    raw: &str,
+) -> Result<ModuleRequirements, CanvasError> {
+    let value: serde_json::Value =
+        serde_json::from_str(raw).map_err(|_| {
+            CanvasError::InvalidModuleRequirement("invalid_json".to_string())
+        })?;
+    let entries = value.as_array().ok_or_else(|| {
+        CanvasError::InvalidModuleRequirement("expected_array".to_string())
+    })?;
+    let mut requirements = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let object = entry.as_object().ok_or_else(|| {
+            CanvasError::InvalidModuleRequirement("expected_object".to_string())
+        })?;
+        let item_id_value = object.get("item_id").ok_or_else(|| {
+            CanvasError::InvalidModuleRequirement("missing_item_id".to_string())
+        })?;
+        let item_id_raw = match item_id_value {
+            serde_json::Value::Number(value) => value.to_string(),
+            serde_json::Value::String(value) => value.clone(),
+            _ => {
+                return Err(CanvasError::InvalidModuleRequirement(
+                    "invalid_item_id".to_string(),
+                ));
+            }
+        };
+        let item_id = parse_module_item_id(&item_id_raw)?;
+        let type_value = object.get("type").ok_or_else(|| {
+            CanvasError::InvalidModuleRequirement("missing_type".to_string())
+        })?;
+        let type_raw = type_value
+            .as_str()
+            .ok_or_else(|| {
+                CanvasError::InvalidModuleRequirement("invalid_type".to_string())
+            })?;
+        let requirement_type = parse_module_requirement_type(type_raw)?;
+        let min_score_value = object.get("min_score");
+        let requirement = match requirement_type {
+            ModuleRequirementType::View => {
+                if min_score_value.is_some() {
+                    return Err(CanvasError::InvalidModuleRequirement(
+                        "unexpected_min_score".to_string(),
+                    ));
+                }
+                ModuleRequirement::View { item_id }
+            }
+            ModuleRequirementType::Submit => {
+                if min_score_value.is_some() {
+                    return Err(CanvasError::InvalidModuleRequirement(
+                        "unexpected_min_score".to_string(),
+                    ));
+                }
+                ModuleRequirement::Submit { item_id }
+            }
+            ModuleRequirementType::Contribute => {
+                if min_score_value.is_some() {
+                    return Err(CanvasError::InvalidModuleRequirement(
+                        "unexpected_min_score".to_string(),
+                    ));
+                }
+                ModuleRequirement::Contribute { item_id }
+            }
+            ModuleRequirementType::Score => {
+                let min_score_value = min_score_value.ok_or_else(|| {
+                    CanvasError::InvalidModuleRequirement(
+                        "missing_min_score".to_string(),
+                    )
+                })?;
+                let min_score_raw = match min_score_value {
+                    serde_json::Value::Number(value) => value.to_string(),
+                    serde_json::Value::String(value) => value.clone(),
+                    _ => {
+                        return Err(CanvasError::InvalidModuleRequirement(
+                            "invalid_min_score".to_string(),
+                        ));
+                    }
+                };
+                let min_score = min_score_raw.parse::<f64>().map_err(|_| {
+                    CanvasError::InvalidModuleRequirement(
+                        "invalid_min_score".to_string(),
+                    )
+                })?;
+                if !min_score.is_finite() || min_score < 0.0 {
+                    return Err(CanvasError::InvalidModuleRequirement(
+                        "invalid_min_score".to_string(),
+                    ));
+                }
+                ModuleRequirement::Score { item_id, min_score }
+            }
+        };
+        requirements.push(requirement);
+    }
+    Ok(ModuleRequirements::new(requirements))
+}
+
+pub fn parse_module_prerequisites(
+    raw: &str,
+) -> Result<ModulePrerequisites, CanvasError> {
+    let value: serde_json::Value =
+        serde_json::from_str(raw).map_err(|_| {
+            CanvasError::InvalidModulePrerequisites("invalid_json".to_string())
+        })?;
+    let entries = value.as_array().ok_or_else(|| {
+        CanvasError::InvalidModulePrerequisites("expected_array".to_string())
+    })?;
+    let mut prerequisites = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let raw = match entry {
+            serde_json::Value::Number(value) => value.to_string(),
+            serde_json::Value::String(value) => value.clone(),
+            _ => {
+                return Err(CanvasError::InvalidModulePrerequisites(
+                    "invalid_module_id".to_string(),
+                ));
+            }
+        };
+        let module_id = parse_module_id(&raw)?;
+        prerequisites.push(module_id);
+    }
+    Ok(ModulePrerequisites::new(prerequisites))
 }
 
 pub fn parse_file_id(raw: &str) -> Result<FileId, CanvasError> {
@@ -897,9 +1172,10 @@ mod tests {
     use super::{
         parse_assignment_overrides, parse_course_dates, parse_external_tool_config_json,
         parse_external_tool_config_url, parse_external_tool_id, parse_external_tool_name,
-        parse_external_tool_placement, parse_host, parse_recipient_ids,
-        parse_rubric_assessment,
-        parse_rubric_association_target, parse_score, parse_token,
+        parse_external_tool_placement, parse_grading_period_id, parse_host,
+        parse_module_prerequisites, parse_module_requirements, parse_recipient_ids,
+        parse_rubric_assessment, parse_rubric_association_target, parse_score,
+        parse_token,
     };
     use canvas_models::{AssignmentId, DueDate, OutcomeId};
 
@@ -949,11 +1225,17 @@ mod tests {
 
     #[test]
     fn parse_rubric_association_target_requires_exactly_one() {
-        let assignment: AssignmentId = "5".parse().expect("assignment");
+        let assignment: AssignmentId = "5".parse().expect("assignment");        
         let outcome: OutcomeId = "7".parse().expect("outcome");
-        let parsed = parse_rubric_association_target(Some(assignment), None);
+        let parsed = parse_rubric_association_target(Some(assignment), None);   
         assert!(parsed.is_ok());
         let parsed = parse_rubric_association_target(Some(assignment), Some(outcome));
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn parse_grading_period_id_rejects_zero() {
+        let parsed = parse_grading_period_id("0");
         assert!(parsed.is_err());
     }
 
@@ -999,5 +1281,26 @@ mod tests {
     fn parse_external_tool_placement_rejects_empty() {
         let parsed = parse_external_tool_placement(" ");
         assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn parse_module_requirements_accepts_score() {
+        let raw = r#"[{"item_id":5,"type":"score","min_score":3.5}]"#;
+        let parsed = parse_module_requirements(raw);
+        assert!(parsed.is_ok());
+    }
+
+    #[test]
+    fn parse_module_requirements_rejects_missing_min_score() {
+        let raw = r#"[{"item_id":5,"type":"score"}]"#;
+        let parsed = parse_module_requirements(raw);
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn parse_module_prerequisites_accepts_array() {
+        let raw = r#"[1,"2"]"#;
+        let parsed = parse_module_prerequisites(raw);
+        assert!(parsed.is_ok());
     }
 }

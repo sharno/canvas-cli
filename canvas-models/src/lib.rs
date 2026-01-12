@@ -27,6 +27,36 @@ impl CourseId {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ContentMigrationId(u64);
+
+impl ContentMigrationId {
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum ContentMigrationIdParseError {
+    #[error("content migration id must be a positive integer")]
+    Invalid,
+}
+
+impl FromStr for ContentMigrationId {
+    type Err = ContentMigrationIdParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        let value = trimmed
+            .parse::<u64>()
+            .map_err(|_| ContentMigrationIdParseError::Invalid)?;
+        if value == 0 {
+            return Err(ContentMigrationIdParseError::Invalid);
+        }
+        Ok(Self(value))
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum CourseIdParseError {
     #[error("course id must be a positive integer")]
@@ -41,6 +71,36 @@ impl FromStr for CourseId {
         let value = trimmed.parse::<u64>().map_err(|_| CourseIdParseError::Invalid)?;
         if value == 0 {
             return Err(CourseIdParseError::Invalid);
+        }
+        Ok(Self(value))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct GradingPeriodId(u64);
+
+impl GradingPeriodId {
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum GradingPeriodIdParseError {
+    #[error("grading period id must be a positive integer")]
+    Invalid,
+}
+
+impl FromStr for GradingPeriodId {
+    type Err = GradingPeriodIdParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        let value = trimmed
+            .parse::<u64>()
+            .map_err(|_| GradingPeriodIdParseError::Invalid)?;
+        if value == 0 {
+            return Err(GradingPeriodIdParseError::Invalid);
         }
         Ok(Self(value))
     }
@@ -347,6 +407,66 @@ impl FromStr for CalendarEventId {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ConferenceId(u64);
+
+impl ConferenceId {
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum ConferenceIdParseError {
+    #[error("conference id must be a positive integer")]
+    Invalid,
+}
+
+impl FromStr for ConferenceId {
+    type Err = ConferenceIdParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        let value = trimmed
+            .parse::<u64>()
+            .map_err(|_| ConferenceIdParseError::Invalid)?;
+        if value == 0 {
+            return Err(ConferenceIdParseError::Invalid);
+        }
+        Ok(Self(value))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CollaborationId(u64);
+
+impl CollaborationId {
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum CollaborationIdParseError {
+    #[error("collaboration id must be a positive integer")]
+    Invalid,
+}
+
+impl FromStr for CollaborationId {
+    type Err = CollaborationIdParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        let value = trimmed
+            .parse::<u64>()
+            .map_err(|_| CollaborationIdParseError::Invalid)?;
+        if value == 0 {
+            return Err(CollaborationIdParseError::Invalid);
+        }
+        Ok(Self(value))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SectionId(u64);
 
 impl SectionId {
@@ -625,6 +745,87 @@ impl FromStr for CalendarEventTitle {
         let trimmed = raw.trim();
         if trimmed.is_empty() {
             return Err(CalendarEventTitleParseError::Empty);
+        }
+        Ok(Self(trimmed.to_string()))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ConferenceTitle(String);
+
+impl ConferenceTitle {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum ConferenceTitleParseError {
+    #[error("conference title must not be empty")]
+    Empty,
+}
+
+impl FromStr for ConferenceTitle {
+    type Err = ConferenceTitleParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(ConferenceTitleParseError::Empty);
+        }
+        Ok(Self(trimmed.to_string()))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CollaborationTitle(String);
+
+impl CollaborationTitle {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum CollaborationTitleParseError {
+    #[error("collaboration title must not be empty")]
+    Empty,
+}
+
+impl FromStr for CollaborationTitle {
+    type Err = CollaborationTitleParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(CollaborationTitleParseError::Empty);
+        }
+        Ok(Self(trimmed.to_string()))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ConferenceDescription(String);
+
+impl ConferenceDescription {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum ConferenceDescriptionParseError {
+    #[error("conference description must not be empty")]
+    Empty,
+}
+
+impl FromStr for ConferenceDescription {
+    type Err = ConferenceDescriptionParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(ConferenceDescriptionParseError::Empty);
         }
         Ok(Self(trimmed.to_string()))
     }
@@ -1032,6 +1233,36 @@ impl FromStr for ModuleId {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ModuleItemId(u64);
+
+impl ModuleItemId {
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum ModuleItemIdParseError {
+    #[error("module item id must be a positive integer")]
+    Invalid,
+}
+
+impl FromStr for ModuleItemId {
+    type Err = ModuleItemIdParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        let value = trimmed
+            .parse::<u64>()
+            .map_err(|_| ModuleItemIdParseError::Invalid)?;
+        if value == 0 {
+            return Err(ModuleItemIdParseError::Invalid);
+        }
+        Ok(Self(value))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ModuleName(String);
 
@@ -1056,6 +1287,141 @@ impl FromStr for ModuleName {
             return Err(ModuleNameParseError::Empty);
         }
         Ok(Self(trimmed.to_string()))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModuleRequirementType {
+    View,
+    Submit,
+    Score,
+    Contribute,
+}
+
+impl ModuleRequirementType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ModuleRequirementType::View => "view",
+            ModuleRequirementType::Submit => "submit",
+            ModuleRequirementType::Score => "score",
+            ModuleRequirementType::Contribute => "contribute",
+        }
+    }
+
+    pub fn as_api_str(&self) -> &'static str {
+        match self {
+            ModuleRequirementType::View => "must_view",
+            ModuleRequirementType::Submit => "must_submit",
+            ModuleRequirementType::Score => "min_score",
+            ModuleRequirementType::Contribute => "must_contribute",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum ModuleRequirementTypeParseError {
+    #[error("module requirement type must be view, submit, score, or contribute")]
+    Invalid,
+}
+
+impl FromStr for ModuleRequirementType {
+    type Err = ModuleRequirementTypeParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "view" | "must_view" => Ok(ModuleRequirementType::View),
+            "submit" | "must_submit" => Ok(ModuleRequirementType::Submit),
+            "score" | "min_score" => Ok(ModuleRequirementType::Score),
+            "contribute" | "must_contribute" => Ok(ModuleRequirementType::Contribute),
+            _ => Err(ModuleRequirementTypeParseError::Invalid),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ModuleRequirement {
+    View { item_id: ModuleItemId },
+    Submit { item_id: ModuleItemId },
+    Score { item_id: ModuleItemId, min_score: f64 },
+    Contribute { item_id: ModuleItemId },
+}
+
+impl ModuleRequirement {
+    pub fn item_id(&self) -> ModuleItemId {
+        match self {
+            ModuleRequirement::View { item_id }
+            | ModuleRequirement::Submit { item_id }
+            | ModuleRequirement::Score { item_id, .. }
+            | ModuleRequirement::Contribute { item_id } => *item_id,
+        }
+    }
+
+    pub fn requirement_type(&self) -> ModuleRequirementType {
+        match self {
+            ModuleRequirement::View { .. } => ModuleRequirementType::View,
+            ModuleRequirement::Submit { .. } => ModuleRequirementType::Submit,
+            ModuleRequirement::Score { .. } => ModuleRequirementType::Score,
+            ModuleRequirement::Contribute { .. } => ModuleRequirementType::Contribute,
+        }
+    }
+
+    pub fn min_score(&self) -> Option<f64> {
+        match self {
+            ModuleRequirement::Score { min_score, .. } => Some(*min_score),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModuleRequirements(Vec<ModuleRequirement>);
+
+impl ModuleRequirements {
+    pub fn new(requirements: Vec<ModuleRequirement>) -> Self {
+        Self(requirements)
+    }
+
+    pub fn items(&self) -> &[ModuleRequirement] {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModulePrerequisites(Vec<ModuleId>);
+
+impl ModulePrerequisites {
+    pub fn new(prerequisites: Vec<ModuleId>) -> Self {
+        Self(prerequisites)
+    }
+
+    pub fn items(&self) -> &[ModuleId] {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ModuleUnlockRules {
+    unlock_at: Option<DueDate>,
+    require_sequential_progress: Option<bool>,
+}
+
+impl ModuleUnlockRules {
+    pub fn new(
+        unlock_at: Option<DueDate>,
+        require_sequential_progress: Option<bool>,
+    ) -> Self {
+        Self {
+            unlock_at,
+            require_sequential_progress,
+        }
+    }
+
+    pub fn unlock_at(self) -> Option<DueDate> {
+        self.unlock_at
+    }
+
+    pub fn require_sequential_progress(self) -> Option<bool> {
+        self.require_sequential_progress
     }
 }
 
@@ -1474,6 +1840,36 @@ impl CalendarEventContext {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConferenceDuration(u32);
+
+impl ConferenceDuration {
+    pub fn minutes(self) -> u32 {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum ConferenceDurationParseError {
+    #[error("conference duration must be a positive integer of minutes")]
+    Invalid,
+}
+
+impl FromStr for ConferenceDuration {
+    type Err = ConferenceDurationParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        let value = trimmed
+            .parse::<u32>()
+            .map_err(|_| ConferenceDurationParseError::Invalid)?;
+        if value == 0 {
+            return Err(ConferenceDurationParseError::Invalid);
+        }
+        Ok(Self(value))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct QuizTimeLimit(u32);
 
 impl QuizTimeLimit {
@@ -1739,6 +2135,43 @@ pub enum CourseVisibility {
     Course,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CollaborationType {
+    GoogleDocs,
+    Office365,
+}
+
+impl CollaborationType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CollaborationType::GoogleDocs => "google_docs",
+            CollaborationType::Office365 => "office365",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum CollaborationTypeParseError {
+    #[error("collaboration type must be 'google_docs' or 'office365'")]
+    Invalid,
+}
+
+impl FromStr for CollaborationType {
+    type Err = CollaborationTypeParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "google_docs" | "google-docs" | "google" => {
+                Ok(CollaborationType::GoogleDocs)
+            }
+            "office365" | "office_365" | "office" | "microsoft" => {
+                Ok(CollaborationType::Office365)
+            }
+            _ => Err(CollaborationTypeParseError::Invalid),
+        }
+    }
+}
+
 impl CourseVisibility {
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -1773,6 +2206,7 @@ pub enum ReportType {
     GradebookExport,
     MissingSubmissions,
     CourseActivity,
+    GradeChangeLog,
 }
 
 impl ReportType {
@@ -1781,13 +2215,14 @@ impl ReportType {
             ReportType::GradebookExport => "grade_export",
             ReportType::MissingSubmissions => "missing_submissions",
             ReportType::CourseActivity => "course_activity",
+            ReportType::GradeChangeLog => "grade_change_log",
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum ReportTypeParseError {
-    #[error("report type must be gradebook, missing_submissions, or course_activity")]
+    #[error("report type must be gradebook, missing_submissions, course_activity, or grade_change_log")]
     Invalid,
 }
 
@@ -1805,7 +2240,50 @@ impl FromStr for ReportType {
             "course_activity" | "activity" | "course_activity_summary" => {
                 Ok(ReportType::CourseActivity)
             }
+            "grade_change_log" | "grade-change-log" | "grade_change" => {
+                Ok(ReportType::GradeChangeLog)
+            }
             _ => Err(ReportTypeParseError::Invalid),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContentMigrationType {
+    CourseCopy,
+    FileImport,
+}
+
+impl ContentMigrationType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ContentMigrationType::CourseCopy => "course_copy_importer",
+            ContentMigrationType::FileImport => "zip_file_importer",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum ContentMigrationTypeParseError {
+    #[error("content migration type must be course_copy or file_import")]
+    Invalid,
+}
+
+impl FromStr for ContentMigrationType {
+    type Err = ContentMigrationTypeParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "course_copy"
+            | "course-copy"
+            | "course_copy_importer"
+            | "coursecopy" => Ok(ContentMigrationType::CourseCopy),
+            "file_import"
+            | "file-import"
+            | "zip_file_importer"
+            | "zip"
+            | "import" => Ok(ContentMigrationType::FileImport),
+            _ => Err(ContentMigrationTypeParseError::Invalid),
         }
     }
 }
@@ -1950,10 +2428,13 @@ impl FromStr for CanvasToken {
 mod tests {
     use super::{
         AllDayDate, AssignmentId, AssignmentName, CalendarEventId, CalendarEventTitle,
-        CanvasHost, CanvasToken, CourseDates, CourseId, CourseVisibility, DiscussionId,
-        DueDate, EventDateTime, ExternalToolConfigUrl, ExternalToolId, ExternalToolName,
-        ExternalToolPlacement, FileId, FolderId, FolderName, GroupId, GroupName,
-        GradingSchemeId, MessageBody, MessageSubject, ModuleId, ModuleName,
+        CanvasHost, CanvasToken, ConferenceDescription, ConferenceDuration, ConferenceId,
+        ConferenceTitle, CollaborationId, CollaborationTitle, CollaborationType,
+        ContentMigrationId, ContentMigrationType, CourseDates, CourseId,
+        CourseVisibility, DiscussionId, DueDate, EventDateTime, ExternalToolConfigUrl,
+        ExternalToolId, ExternalToolName, ExternalToolPlacement, FileId, FolderId,
+        FolderName, GradingPeriodId, GroupId, GroupName, GradingSchemeId, MessageBody,
+        MessageSubject, ModuleId, ModuleItemId, ModuleName, ModuleRequirementType,
         OutcomeDescription, OutcomeGroupId, OutcomeId, OutcomeTitle, PageBody, PageId,
         PageTitle, PointsPossible, PublishState, QuestionBankId, QuestionBankTitle,
         QuestionId, QuestionName, QuestionText, QuestionType, RecipientIds, ReportType,
@@ -1976,6 +2457,12 @@ mod tests {
     #[test]
     fn course_id_rejects_non_numbers() {
         let parsed: Result<CourseId, _> = "abc".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn grading_period_id_rejects_zero() {
+        let parsed: Result<GradingPeriodId, _> = "0".parse();
         assert!(parsed.is_err());
     }
 
@@ -2052,6 +2539,18 @@ mod tests {
     }
 
     #[test]
+    fn conference_id_rejects_zero() {
+        let parsed: Result<ConferenceId, _> = "0".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn collaboration_id_rejects_zero() {
+        let parsed: Result<CollaborationId, _> = "0".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
     fn external_tool_id_rejects_zero() {
         let parsed: Result<ExternalToolId, _> = "0".parse();
         assert!(parsed.is_err());
@@ -2078,6 +2577,30 @@ mod tests {
     #[test]
     fn calendar_event_title_rejects_empty() {
         let parsed: Result<CalendarEventTitle, _> = "   ".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn conference_title_rejects_empty() {
+        let parsed: Result<ConferenceTitle, _> = " ".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn collaboration_title_rejects_empty() {
+        let parsed: Result<CollaborationTitle, _> = " ".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn conference_description_rejects_empty() {
+        let parsed: Result<ConferenceDescription, _> = "".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn conference_duration_rejects_zero() {
+        let parsed: Result<ConferenceDuration, _> = "0".parse();
         assert!(parsed.is_err());
     }
 
@@ -2221,6 +2744,18 @@ mod tests {
     }
 
     #[test]
+    fn collaboration_type_parses_google_alias() {
+        let parsed: Result<CollaborationType, _> = "google".parse();
+        assert!(matches!(parsed, Ok(CollaborationType::GoogleDocs)));
+    }
+
+    #[test]
+    fn collaboration_type_rejects_unknown() {
+        let parsed: Result<CollaborationType, _> = "dropbox".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
     fn report_type_parses_gradebook() {
         let parsed: Result<ReportType, _> = "grade_export".parse();
         assert!(matches!(parsed, Ok(ReportType::GradebookExport)));
@@ -2233,8 +2768,32 @@ mod tests {
     }
 
     #[test]
+    fn report_type_parses_grade_change_log() {
+        let parsed: Result<ReportType, _> = "grade_change_log".parse();
+        assert!(matches!(parsed, Ok(ReportType::GradeChangeLog)));
+    }
+
+    #[test]
     fn report_type_rejects_unknown() {
         let parsed: Result<ReportType, _> = "unknown_report".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn content_migration_type_parses_course_copy() {
+        let parsed: Result<ContentMigrationType, _> = "course_copy".parse();
+        assert!(matches!(parsed, Ok(ContentMigrationType::CourseCopy)));
+    }
+
+    #[test]
+    fn content_migration_type_parses_file_import() {
+        let parsed: Result<ContentMigrationType, _> = "file_import".parse();
+        assert!(matches!(parsed, Ok(ContentMigrationType::FileImport)));
+    }
+
+    #[test]
+    fn content_migration_id_rejects_zero() {
+        let parsed: Result<ContentMigrationId, _> = "0".parse();
         assert!(parsed.is_err());
     }
 
@@ -2301,9 +2860,21 @@ mod tests {
     }
 
     #[test]
+    fn module_item_id_rejects_zero() {
+        let parsed: Result<ModuleItemId, _> = "0".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
     fn module_name_rejects_empty() {
         let parsed: Result<ModuleName, _> = "  ".parse();
         assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn module_requirement_type_parses_view() {
+        let parsed: Result<ModuleRequirementType, _> = "view".parse();
+        assert!(matches!(parsed, Ok(value) if value == ModuleRequirementType::View));
     }
 
     #[test]
