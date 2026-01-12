@@ -6,7 +6,12 @@ use time::format_description::{self, well_known::Rfc3339};
 use time::{Date, OffsetDateTime};
 use url::Url;
 
+mod ask;
 mod assignment_advanced;
+pub use ask::{
+    AskCommand, AskCommandKind, AskParam, AskParamKey, AskPlan, AskPrompt,
+    AskRationale, AskRisk,
+};
 pub use assignment_advanced::{
     AssignmentOverride, AssignmentOverrideDates, AssignmentOverrideDatesError,
     AssignmentOverrideTarget, AssignmentOverrides, AssignmentOverridesError,
@@ -970,6 +975,36 @@ impl FromStr for QuestionText {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CommunicationChannelId(u64);
+
+impl CommunicationChannelId {
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum CommunicationChannelIdParseError {
+    #[error("communication channel id must be a positive integer")]
+    Invalid,
+}
+
+impl FromStr for CommunicationChannelId {
+    type Err = CommunicationChannelIdParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        let value = trimmed
+            .parse::<u64>()
+            .map_err(|_| CommunicationChannelIdParseError::Invalid)?;
+        if value == 0 {
+            return Err(CommunicationChannelIdParseError::Invalid);
+        }
+        Ok(Self(value))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct UserId(u64);
 
 impl UserId {
@@ -1212,6 +1247,111 @@ impl FromStr for MessageBody {
             return Err(MessageBodyParseError::Empty);
         }
         Ok(Self(trimmed.to_string()))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct NotificationPreferenceKey(String);
+
+impl NotificationPreferenceKey {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum NotificationPreferenceKeyParseError {
+    #[error("notification key must not be empty")]
+    Empty,
+}
+
+impl FromStr for NotificationPreferenceKey {
+    type Err = NotificationPreferenceKeyParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(NotificationPreferenceKeyParseError::Empty);
+        }
+        Ok(Self(trimmed.to_string()))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotificationFrequency {
+    Immediately,
+    Daily,
+    Weekly,
+    Never,
+}
+
+impl NotificationFrequency {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            NotificationFrequency::Immediately => "immediately",
+            NotificationFrequency::Daily => "daily",
+            NotificationFrequency::Weekly => "weekly",
+            NotificationFrequency::Never => "never",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum NotificationFrequencyParseError {
+    #[error("notification frequency must be immediately, daily, weekly, or never")]
+    Invalid,
+}
+
+impl FromStr for NotificationFrequency {
+    type Err = NotificationFrequencyParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "immediately" | "instant" => Ok(NotificationFrequency::Immediately),
+            "daily" => Ok(NotificationFrequency::Daily),
+            "weekly" => Ok(NotificationFrequency::Weekly),
+            "never" | "none" => Ok(NotificationFrequency::Never),
+            _ => Err(NotificationFrequencyParseError::Invalid),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotificationChannelType {
+    Email,
+    Sms,
+    Push,
+    Twitter,
+}
+
+impl NotificationChannelType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            NotificationChannelType::Email => "email",
+            NotificationChannelType::Sms => "sms",
+            NotificationChannelType::Push => "push",
+            NotificationChannelType::Twitter => "twitter",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum NotificationChannelTypeParseError {
+    #[error("notification channel must be email, sms, push, or twitter")]
+    Invalid,
+}
+
+impl FromStr for NotificationChannelType {
+    type Err = NotificationChannelTypeParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "email" => Ok(NotificationChannelType::Email),
+            "sms" | "text" => Ok(NotificationChannelType::Sms),
+            "push" => Ok(NotificationChannelType::Push),
+            "twitter" => Ok(NotificationChannelType::Twitter),
+            _ => Err(NotificationChannelTypeParseError::Invalid),
+        }
     }
 }
 
@@ -2489,15 +2629,16 @@ mod tests {
         ConferenceTitle, CollaborationId, CollaborationTitle, CollaborationType,
         ContentMigrationId, ContentMigrationType, CourseDates, CourseId,
         CourseVisibility, DiscussionId, DueDate, EventDateTime, ExternalToolConfigUrl,
-        EnrollmentId, ExternalToolId, ExternalToolName, ExternalToolPlacement, FileId,
-        FolderId, FolderName, GradingPeriodId, GroupId, GroupName, GradingSchemeId,
-        MessageBody, MessageSubject, ModuleId, ModuleItemId, ModuleName,
-        ModuleRequirementType, OutcomeDescription, OutcomeGroupId, OutcomeId,
-        OutcomeTitle, PageBody, PageId, PageTitle, PointsPossible, PublishState,
-        QuestionBankId, QuestionBankTitle, QuestionId, QuestionName, QuestionText,
-        QuestionType, RecipientIds, ReportType, RubricAssociationId, RubricAssessment,
-        RubricId, RubricSelection, RubricTitle, Score, SectionId, SectionName,
-        SubmissionId, UserId, UserRole,
+        CommunicationChannelId, EnrollmentId, ExternalToolId, ExternalToolName,
+        ExternalToolPlacement, FileId, FolderId, FolderName, GradingPeriodId, GroupId,
+        GroupName, GradingSchemeId, MessageBody, MessageSubject, ModuleId,
+        ModuleItemId, ModuleName, ModuleRequirementType, NotificationChannelType,
+        NotificationFrequency, NotificationPreferenceKey, OutcomeDescription,
+        OutcomeGroupId, OutcomeId, OutcomeTitle, PageBody, PageId, PageTitle,
+        PointsPossible, PublishState, QuestionBankId, QuestionBankTitle, QuestionId,
+        QuestionName, QuestionText, QuestionType, RecipientIds, ReportType,
+        RubricAssociationId, RubricAssessment, RubricId, RubricSelection,
+        RubricTitle, Score, SectionId, SectionName, SubmissionId, UserId, UserRole,
     };
 
     #[test]
@@ -3005,5 +3146,29 @@ mod tests {
     fn group_name_rejects_empty() {
         let parsed: Result<GroupName, _> = " ".parse();
         assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn communication_channel_id_rejects_zero() {
+        let parsed: Result<CommunicationChannelId, _> = "0".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn notification_preference_key_rejects_empty() {
+        let parsed: Result<NotificationPreferenceKey, _> = " ".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn notification_frequency_parses_daily() {
+        let parsed: Result<NotificationFrequency, _> = "daily".parse();
+        assert!(matches!(parsed, Ok(NotificationFrequency::Daily)));
+    }
+
+    #[test]
+    fn notification_channel_type_parses_push() {
+        let parsed: Result<NotificationChannelType, _> = "push".parse();
+        assert!(matches!(parsed, Ok(NotificationChannelType::Push)));
     }
 }

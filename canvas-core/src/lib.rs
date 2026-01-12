@@ -1,6 +1,7 @@
 mod auth;
 mod api;
 mod assignments;
+mod ask;
 mod calendar;
 mod conferences;
 mod collaborations;
@@ -11,6 +12,7 @@ mod content_migrations;
 mod external_tools;
 mod gradebook;
 mod people;
+mod notifications;
 mod reports;
 mod quizzes;
 mod outcomes;
@@ -19,10 +21,11 @@ mod question_banks;
 mod sections;
 
 use canvas_models::{
-    AllDayDate, AssignmentId, AssignmentName, AssignmentOverride, AssignmentOverrideDates,
+    AllDayDate, AskPrompt, AssignmentId, AssignmentName, AssignmentOverride, AssignmentOverrideDates,
     AssignmentOverrideTarget, AssignmentOverrides, CalendarEventContext, CalendarEventId,
     CalendarEventTitle, CanvasHost, CanvasToken, ConferenceDescription, ConferenceDuration,
-    CollaborationId, CollaborationTitle, CollaborationType, ConferenceId,
+    CollaborationId, CollaborationTitle, CollaborationType, CommunicationChannelId,
+    ConferenceId,
     ConferenceTitle, ContentMigrationId, ContentMigrationType, CourseDates,
     CourseId, CourseVisibility, DiscussionId, DueDate, EventDateTime,
     EnrollmentId, ExternalToolConfigUrl, ExternalToolId, ExternalToolName,
@@ -30,7 +33,8 @@ use canvas_models::{
     GradingSchemeId, GroupAssignmentMode, GroupAssignmentSettings,
     GroupCategoryId, GroupId, GroupName, MessageBody, MessageSubject, ModuleId,
     ModuleItemId, ModuleName, ModulePrerequisites, ModuleRequirement,
-    ModuleRequirementType, ModuleRequirements, MutedState, OutcomeDescription,
+    ModuleRequirementType, ModuleRequirements, MutedState, NotificationChannelType,
+    NotificationFrequency, NotificationPreferenceKey, OutcomeDescription,
     OutcomeGroupId, OutcomeId, OutcomeTitle, OverrideStudentIds, PageBody, PageId,
     PageTitle, PeerReviewMode, PeerReviewSettings, PointsPossible, PublishState,
     QuestionBankId, QuestionBankTitle, QuestionId, QuestionName, QuestionText,
@@ -43,6 +47,7 @@ use thiserror::Error;
 
 pub use auth::auth_check;
 pub use api::{ApiError, ApiErrorCode, CanvasClient, RetryPolicy};
+pub use ask::{AskPlanner, RuleBasedAskPlanner};
 pub use assignments::{
     create_assignment, delete_assignment, ensure_assignment_points, get_assignment,
     grade_submission, list_assignments, list_submissions, update_assignment,
@@ -94,6 +99,10 @@ pub use gradebook::{
 pub use people::{
     create_group, list_groups, list_users, send_message, GroupSummary,
     MessageSendInput, MessageSendResult, UserSummary,
+};
+pub use notifications::{
+    list_notification_preferences, update_notification_preference,
+    NotificationPreferenceSummary,
 };
 pub use sections::{
     add_enrollment, create_section, delete_section, list_enrollments,
@@ -236,6 +245,14 @@ pub enum CanvasError {
     InvalidConferenceDuration(String),
     #[error("invalid user id: {0}")]
     InvalidUserId(String),
+    #[error("invalid communication channel id: {0}")]
+    InvalidCommunicationChannelId(String),
+    #[error("invalid notification channel: {0}")]
+    InvalidNotificationChannel(String),
+    #[error("invalid notification key: {0}")]
+    InvalidNotificationPreferenceKey(String),
+    #[error("invalid notification frequency: {0}")]
+    InvalidNotificationFrequency(String),
     #[error("invalid submission id: {0}")]
     InvalidSubmissionId(String),
     #[error("invalid page id: {0}")]
@@ -316,6 +333,8 @@ pub enum CanvasError {
     InvalidCourseUpdate(String),
     #[error("grading period not found: {0}")]
     GradingPeriodNotFound(u64),
+    #[error("communication channel not found: {0}")]
+    NotificationChannelNotFound(u64),
     #[error("invalid assignment update: {0}")]
     InvalidAssignmentUpdate(String),
     #[error("invalid outcome update: {0}")]
@@ -366,6 +385,8 @@ pub enum CanvasError {
     InvalidHost(String),
     #[error("invalid token")]
     InvalidToken,
+    #[error("invalid ask prompt: {0}")]
+    InvalidAskPrompt(String),
     #[error("missing configuration: {0}")]
     MissingConfig(String),
     #[error("failed to read config file at {0}: {1}")]
@@ -646,6 +667,35 @@ pub fn parse_conference_duration(
 pub fn parse_user_id(raw: &str) -> Result<UserId, CanvasError> {
     raw.parse::<UserId>()
         .map_err(|_| CanvasError::InvalidUserId(raw.to_string()))
+}
+
+pub fn parse_communication_channel_id(
+    raw: &str,
+) -> Result<CommunicationChannelId, CanvasError> {
+    raw.parse::<CommunicationChannelId>()
+        .map_err(|_| CanvasError::InvalidCommunicationChannelId(raw.to_string()))
+}
+
+pub fn parse_notification_channel_type(
+    raw: &str,
+) -> Result<NotificationChannelType, CanvasError> {
+    raw.parse::<NotificationChannelType>()
+        .map_err(|_| CanvasError::InvalidNotificationChannel(raw.to_string()))
+}
+
+pub fn parse_notification_preference_key(
+    raw: &str,
+) -> Result<NotificationPreferenceKey, CanvasError> {
+    raw.parse::<NotificationPreferenceKey>().map_err(|_| {
+        CanvasError::InvalidNotificationPreferenceKey(raw.to_string())
+    })
+}
+
+pub fn parse_notification_frequency(
+    raw: &str,
+) -> Result<NotificationFrequency, CanvasError> {
+    raw.parse::<NotificationFrequency>()
+        .map_err(|_| CanvasError::InvalidNotificationFrequency(raw.to_string()))
 }
 
 pub fn parse_submission_id(raw: &str) -> Result<SubmissionId, CanvasError> {
@@ -1189,13 +1239,22 @@ pub fn parse_token(raw: &str) -> Result<CanvasToken, CanvasError> {
         .map_err(|_| CanvasError::InvalidToken)
 }
 
+pub fn parse_ask_prompt(raw: &str) -> Result<AskPrompt, CanvasError> {
+    raw.parse::<AskPrompt>()
+        .map_err(|_| CanvasError::InvalidAskPrompt(raw.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_assignment_overrides, parse_course_dates, parse_external_tool_config_json,
+        parse_ask_prompt, parse_assignment_overrides,
+        parse_communication_channel_id,
+        parse_course_dates, parse_external_tool_config_json,
         parse_external_tool_config_url, parse_external_tool_id, parse_external_tool_name,
         parse_external_tool_placement, parse_grading_period_id, parse_host,
-        parse_module_prerequisites, parse_module_requirements, parse_recipient_ids,
+        parse_module_prerequisites, parse_module_requirements,
+        parse_notification_channel_type, parse_notification_frequency,
+        parse_notification_preference_key, parse_recipient_ids,
         parse_rubric_assessment, parse_rubric_association_target, parse_score,
         parse_token,
     };
@@ -1246,6 +1305,12 @@ mod tests {
     }
 
     #[test]
+    fn parse_ask_prompt_rejects_empty() {
+        let parsed = parse_ask_prompt("   ");
+        assert!(parsed.is_err());
+    }
+
+    #[test]
     fn parse_rubric_association_target_requires_exactly_one() {
         let assignment: AssignmentId = "5".parse().expect("assignment");        
         let outcome: OutcomeId = "7".parse().expect("outcome");
@@ -1290,6 +1355,30 @@ mod tests {
     #[test]
     fn parse_external_tool_config_url_requires_http() {
         let parsed = parse_external_tool_config_url("ftp://example.com");
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn parse_communication_channel_id_rejects_zero() {
+        let parsed = parse_communication_channel_id("0");
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn parse_notification_frequency_accepts_weekly() {
+        let parsed = parse_notification_frequency("weekly");
+        assert!(parsed.is_ok());
+    }
+
+    #[test]
+    fn parse_notification_preference_key_rejects_empty() {
+        let parsed = parse_notification_preference_key(" ");
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn parse_notification_channel_type_rejects_unknown() {
+        let parsed = parse_notification_channel_type("pager");
         assert!(parsed.is_err());
     }
 

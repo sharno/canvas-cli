@@ -6,19 +6,22 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 
 use canvas_models::{
-    AssignmentId, CalendarEventContext, CalendarEventId, CollaborationId,
-    ConferenceId, ContentMigrationId, CourseId, EnrollmentId, FileId, FolderId,
-    GradingPeriodId, GradingPostingPolicy, ModuleId, OutcomeGroupId, OutcomeId,
-    PageId, QuestionBankId, QuestionId, QuizId, QuizSubmissionId, ReportType,
-    RubricAssociationId, RubricId, SectionId, UserId,
+    AskCommandKind, AskPlan, AssignmentId, CalendarEventContext, CalendarEventId,
+    CollaborationId, CommunicationChannelId, ConferenceId, ContentMigrationId,
+    CourseId, EnrollmentId, FileId, FolderId, GradingPeriodId,
+    GradingPostingPolicy, ModuleId, NotificationFrequency,
+    NotificationPreferenceKey, OutcomeGroupId, OutcomeId, PageId, QuestionBankId,
+    QuestionId, QuizId, QuizSubmissionId, ReportType, RubricAssociationId,
+    RubricId, SectionId, UserId,
 };
 use clap::{Args, Parser, Subcommand};
 use csv::ReaderBuilder;
 use serde_json::{json, Value};
 use thiserror::Error;
 use tracing::info;
+use canvas_core::AskPlanner;
 
-const SCHEMA_VERSION: &str = "v10";
+const SCHEMA_VERSION: &str = "v12";
 
 #[derive(Debug, Parser)]
 #[command(
@@ -196,6 +199,12 @@ enum Command {
     Message {
         #[command(subcommand)]
         command: MessageCommand,
+    },
+    /// Notification preference operations
+    #[command(after_help = "Examples:\n  canvas notification list\n  canvas notification update --channel-id 42 --notification new_announcement --frequency daily")]
+    Notification {
+        #[command(subcommand)]
+        command: NotificationCommand,
     },
     /// Group-related operations
     #[command(after_help = "Examples:\n  canvas group list --course 42\n  canvas group create --course 42 --name \"Project Teams\"")]
@@ -1412,6 +1421,24 @@ enum MessageCommand {
 }
 
 #[derive(Debug, Subcommand)]
+enum NotificationCommand {
+    /// List notification preferences for the current user
+    List,
+    /// Update a notification preference for a communication channel
+    Update {
+        /// Communication channel id
+        #[arg(long = "channel-id")]
+        channel_id: String,
+        /// Notification preference key
+        #[arg(long)]
+        notification: String,
+        /// Notification frequency (immediately, daily, weekly, never)
+        #[arg(long)]
+        frequency: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
 enum GroupCommand {
     /// List groups in a course
     List {
@@ -2258,6 +2285,22 @@ enum MessageRequest {
 }
 
 #[derive(Debug)]
+struct NotificationListRequest;
+
+#[derive(Debug)]
+struct NotificationUpdateRequest {
+    channel_id: CommunicationChannelId,
+    notification: NotificationPreferenceKey,
+    frequency: NotificationFrequency,
+}
+
+#[derive(Debug)]
+enum NotificationRequest {
+    List(NotificationListRequest),
+    Update(NotificationUpdateRequest),
+}
+
+#[derive(Debug)]
 struct GroupListRequest {
     course_id: CourseId,
 }
@@ -2396,22 +2439,6 @@ struct PlannedAction {
     requires_confirmation: bool,
 }
 
-#[derive(Debug)]
-struct AskPlan {
-    prompt: String,
-    rationale: String,
-    commands: Vec<PlannedCommand>,
-}
-
-#[derive(Debug)]
-struct PlannedCommand {
-    id: &'static str,
-    command: &'static str,
-    params: Vec<(&'static str, String)>,
-    risk: &'static str,
-    destructive: bool,
-}
-
 #[derive(Debug, Error)]
 enum CliError {
     #[error("missing command")]
@@ -2420,8 +2447,6 @@ enum CliError {
     MissingCourseId,
     #[error("confirmation required for {0}")]
     ConfirmationRequired(&'static str),
-    #[error("unable to execute ask plan")]
-    AskExecutionUnsupported,
     #[error("failed to read file at {0}: {1}")]
     FileRead(String, String),
     #[error("failed to write file at {0}: {1}")]
@@ -2540,6 +2565,10 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Command::Message { command } => {
             let request = MessageRequest::try_from((command, &global))?;
             handle_message(request, &global)
+        }
+        Command::Notification { command } => {
+            let request = NotificationRequest::try_from((command, &global))?;
+            handle_notification(request, &global)
         }
         Command::Group { command } => {
             let request = GroupRequest::try_from((command, &global))?;
@@ -5046,6 +5075,71 @@ fn handle_message(
     Ok(())
 }
 
+fn handle_notification(
+    request: NotificationRequest,
+    global: &GlobalOptions,
+) -> Result<(), CliError> {
+    match request {
+        NotificationRequest::List(_) => {
+            let planned = vec![PlannedAction {
+                action: "list notification preferences",
+                risk: "none",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("notification list", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let preferences = canvas_core::list_notification_preferences(&config)?;
+            let data = json!({
+                "status": "ok",
+                "preferences": preferences
+                    .iter()
+                    .map(notification_preference_summary_json)
+                    .collect::<Vec<_>>(),
+            });
+            emit_result("notification list", data, global);
+            if !global.quiet && !global.json {
+                println!(
+                    "Found {} notification preferences.",
+                    preferences.len()
+                );
+            }
+        }
+        NotificationRequest::Update(request) => {
+            let planned = vec![PlannedAction {
+                action: "update notification preference",
+                risk: "updates notification delivery settings",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("notification update", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let preference = canvas_core::update_notification_preference(
+                &config,
+                request.channel_id,
+                request.notification,
+                request.frequency,
+            )?;
+            emit_result(
+                "notification update",
+                json!({
+                    "status": "updated",
+                    "preference": notification_preference_summary_json(&preference),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Notification preference updated.");
+            }
+        }
+    }
+    Ok(())
+}
+
 fn handle_group(request: GroupRequest, global: &GlobalOptions) -> Result<(), CliError> {
     match request {
         GroupRequest::List(request) => {
@@ -5560,7 +5654,9 @@ fn handle_report_export(
 }
 
 fn handle_ask(prompt: &str, global: &GlobalOptions) -> Result<(), CliError> {
-    let plan = plan_from_prompt(prompt);
+    let prompt = canvas_core::parse_ask_prompt(prompt)?;
+    let planner = canvas_core::RuleBasedAskPlanner::default();
+    let plan = planner.plan(&prompt);
     if global.explain {
         emit_ask_plan(&plan, global);
         return Ok(());
@@ -5569,7 +5665,7 @@ fn handle_ask(prompt: &str, global: &GlobalOptions) -> Result<(), CliError> {
     if !global.confirm {
         return Ok(());
     }
-    if plan.commands.is_empty() {
+    if plan.commands().is_empty() {
         return Ok(());
     }
     execute_ask_plan(&plan, global)?;
@@ -5577,53 +5673,17 @@ fn handle_ask(prompt: &str, global: &GlobalOptions) -> Result<(), CliError> {
 }
 
 fn execute_ask_plan(plan: &AskPlan, global: &GlobalOptions) -> Result<(), CliError> {
-    for command in &plan.commands {
-        match command.command {
-            "auth check" => {
+    for command in plan.commands() {
+        match command.kind() {
+            AskCommandKind::AuthCheck => {
                 handle_auth(AuthCommand::Check, global)?;
             }
-            "course list" => {
+            AskCommandKind::CourseList => {
                 handle_course(CourseRequest::List(CourseListRequest), global)?;
             }
-            _ => return Err(CliError::AskExecutionUnsupported),
         }
     }
     Ok(())
-}
-
-fn plan_from_prompt(prompt: &str) -> AskPlan {
-    let normalized = prompt.to_lowercase();
-    if normalized.contains("auth") && normalized.contains("check") {
-        AskPlan {
-            prompt: prompt.to_string(),
-            rationale: "Detected intent to validate credentials.".to_string(),
-            commands: vec![PlannedCommand {
-                id: "auth-check",
-                command: "auth check",
-                params: Vec::new(),
-                risk: "none",
-                destructive: false,
-            }],
-        }
-    } else if normalized.contains("list") && normalized.contains("course") {
-        AskPlan {
-            prompt: prompt.to_string(),
-            rationale: "Detected intent to list courses.".to_string(),
-            commands: vec![PlannedCommand {
-                id: "course-list",
-                command: "course list",
-                params: Vec::new(),
-                risk: "none",
-                destructive: false,
-            }],
-        }
-    } else {
-        AskPlan {
-            prompt: prompt.to_string(),
-            rationale: "No matching command yet.".to_string(),
-            commands: Vec::new(),
-        }
-    }
 }
 
 fn require_confirmation(global: &GlobalOptions, action: &'static str) -> Result<(), CliError> {
@@ -6234,15 +6294,21 @@ fn emit_ask_plan(plan: &AskPlan, global: &GlobalOptions) {
             "schema_version": SCHEMA_VERSION,
             "command": "ask",
             "data": {
-                "prompt": plan.prompt,
-                "rationale": plan.rationale,
-                "commands": plan.commands.iter().map(|command| {
+                "prompt": plan.prompt().as_str(),
+                "rationale": plan.rationale().as_str(),
+                "commands": plan.commands().iter().map(|command| {
+                    let kind = command.kind();
                     json!({
-                        "id": command.id,
-                        "command": command.command,
-                        "params": command.params,
-                        "risk": command.risk,
-                        "destructive": command.destructive,
+                        "id": kind.id(),
+                        "command": kind.command(),
+                        "params": command.params().iter().map(|param| {
+                            json!({
+                                "key": param.key().as_str(),
+                                "value": param.value(),
+                            })
+                        }).collect::<Vec<_>>(),
+                        "risk": kind.risk().as_str(),
+                        "destructive": kind.destructive(),
                     })
                 }).collect::<Vec<_>>(),
             },
@@ -6254,16 +6320,18 @@ fn emit_ask_plan(plan: &AskPlan, global: &GlobalOptions) {
         return;
     }
     println!("Ask plan:");
-    println!("Prompt: {}", plan.prompt);
-    if !plan.rationale.is_empty() {
-        println!("Rationale: {}", plan.rationale);
+    println!("Prompt: {}", plan.prompt().as_str());
+    let rationale = plan.rationale().as_str();
+    if !rationale.is_empty() {
+        println!("Rationale: {}", rationale);
     }
-    if plan.commands.is_empty() {
+    if plan.commands().is_empty() {
         println!("No matching commands.");
         return;
     }
-    for command in &plan.commands {
-        println!("- {} (risk: {})", command.command, command.risk);
+    for command in plan.commands() {
+        let kind = command.kind();
+        println!("- {} (risk: {})", kind.command(), kind.risk().as_str());
     }
 }
 
@@ -6655,6 +6723,20 @@ fn user_summary_json(user: &canvas_core::UserSummary) -> Value {
     })
 }
 
+fn notification_preference_summary_json(
+    preference: &canvas_core::NotificationPreferenceSummary,
+) -> Value {
+    json!({
+        "channel_id": preference.channel_id,
+        "channel": preference.channel,
+        "channel_address": preference.channel_address,
+        "notification": preference.notification,
+        "frequency": preference.frequency,
+        "locked": preference.locked,
+        "locked_by_policy": preference.locked_by_policy,
+    })
+}
+
 fn group_summary_json(group: &canvas_core::GroupSummary) -> Value {
     json!({
         "id": group.id,
@@ -6888,7 +6970,36 @@ fn schema_definition() -> Value {
                         "properties": {
                             "prompt": { "type": "string" },
                             "rationale": { "type": "string" },
-                            "commands": { "type": "array" },
+                            "commands": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": { "type": "string" },
+                                        "command": { "type": "string" },
+                                        "params": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "key": { "type": "string" },
+                                                    "value": { "type": "string" },
+                                                },
+                                                "required": ["key", "value"],
+                                            },
+                                        },
+                                        "risk": { "type": "string" },
+                                        "destructive": { "type": "boolean" },
+                                    },
+                                    "required": [
+                                        "id",
+                                        "command",
+                                        "params",
+                                        "risk",
+                                        "destructive"
+                                    ],
+                                },
+                            },
                         },
                         "required": ["prompt", "rationale", "commands"],
                     },
@@ -7403,6 +7514,26 @@ fn schema_definition() -> Value {
                     "command": { "type": "string" },
                     "data": { "type": "object" },
                 },
+                "required": ["ok", "schema_version", "command", "data"],        
+            },
+            "notification_list": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "notification_update": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
                 "required": ["ok", "schema_version", "command", "data"],
             },
             "group_list": {
@@ -7603,7 +7734,6 @@ fn error_code(error: &CliError) -> &'static str {
         CliError::MissingCommand => "missing_command",
         CliError::MissingCourseId => "missing_course_id",
         CliError::ConfirmationRequired(_) => "confirmation_required",
-        CliError::AskExecutionUnsupported => "ask_execution_unsupported",
         CliError::FileRead(_, _) => "file_read",
         CliError::FileWrite(_, _) => "file_write",
         CliError::InvalidReportFormat(_) => "invalid_report_format",
@@ -7738,6 +7868,18 @@ fn error_code(error: &CliError) -> &'static str {
                 "invalid_conference_duration"
             }
             canvas_core::CanvasError::InvalidUserId(_) => "invalid_user_id",
+            canvas_core::CanvasError::InvalidCommunicationChannelId(_) => {
+                "invalid_communication_channel_id"
+            }
+            canvas_core::CanvasError::InvalidNotificationChannel(_) => {
+                "invalid_notification_channel"
+            }
+            canvas_core::CanvasError::InvalidNotificationPreferenceKey(_) => {
+                "invalid_notification_preference_key"
+            }
+            canvas_core::CanvasError::InvalidNotificationFrequency(_) => {
+                "invalid_notification_frequency"
+            }
             canvas_core::CanvasError::InvalidSubmissionId(_) => "invalid_submission_id",
             canvas_core::CanvasError::InvalidPageId(_) => "invalid_page_id",
             canvas_core::CanvasError::InvalidPageTitle(_) => "invalid_page_title",
@@ -7806,6 +7948,9 @@ fn error_code(error: &CliError) -> &'static str {
             canvas_core::CanvasError::GradingPeriodNotFound(_) => {
                 "grading_period_not_found"
             }
+            canvas_core::CanvasError::NotificationChannelNotFound(_) => {
+                "communication_channel_not_found"
+            }
             canvas_core::CanvasError::InvalidAssignmentUpdate(_) => {
                 "invalid_assignment_update"
             }
@@ -7855,6 +8000,9 @@ fn error_code(error: &CliError) -> &'static str {
             }
             canvas_core::CanvasError::InvalidHost(_) => "invalid_host",
             canvas_core::CanvasError::InvalidToken => "invalid_token",
+            canvas_core::CanvasError::InvalidAskPrompt(_) => {
+                "invalid_ask_prompt"
+            }
             canvas_core::CanvasError::MissingConfig(_) => "missing_config",
             canvas_core::CanvasError::ConfigRead(_, _) => "config_read",
             canvas_core::CanvasError::ConfigParse(_, _) => "config_parse",
@@ -8012,6 +8160,18 @@ fn error_details(error: &CliError) -> Value {
                 json!({ "input": raw })
             }
             canvas_core::CanvasError::InvalidUserId(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidCommunicationChannelId(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidNotificationChannel(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidNotificationPreferenceKey(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidNotificationFrequency(raw) => {
+                json!({ "input": raw })
+            }
             canvas_core::CanvasError::InvalidSubmissionId(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidPageId(raw) => json!({ "input": raw }),
             canvas_core::CanvasError::InvalidPageTitle(raw) => json!({ "input": raw }),
@@ -8086,6 +8246,9 @@ fn error_details(error: &CliError) -> Value {
             canvas_core::CanvasError::GradingPeriodNotFound(id) => {
                 json!({ "grading_period_id": id })
             }
+            canvas_core::CanvasError::NotificationChannelNotFound(id) => {
+                json!({ "channel_id": id })
+            }
             canvas_core::CanvasError::InvalidAssignmentUpdate(detail) => {
                 json!({ "detail": detail })
             }
@@ -8156,6 +8319,9 @@ fn error_details(error: &CliError) -> Value {
                 json!({ "detail": detail })
             }
             canvas_core::CanvasError::InvalidHost(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidAskPrompt(prompt) => {
+                json!({ "prompt": prompt })
+            }
             canvas_core::CanvasError::MissingConfig(path) => json!({ "path": path }),
             canvas_core::CanvasError::ConfigRead(path, detail) => {
                 json!({ "path": path, "detail": detail })
@@ -10119,6 +10285,38 @@ impl TryFrom<(MessageCommand, &GlobalOptions)> for MessageRequest {
     }
 }
 
+impl TryFrom<(NotificationCommand, &GlobalOptions)> for NotificationRequest {
+    type Error = CliError;
+
+    fn try_from(
+        input: (NotificationCommand, &GlobalOptions),
+    ) -> Result<Self, Self::Error> {
+        let (command, _global) = input;
+        match command {
+            NotificationCommand::List => {
+                Ok(NotificationRequest::List(NotificationListRequest))
+            }
+            NotificationCommand::Update {
+                channel_id,
+                notification,
+                frequency,
+            } => {
+                let channel_id =
+                    canvas_core::parse_communication_channel_id(&channel_id)?;
+                let notification =
+                    canvas_core::parse_notification_preference_key(&notification)?;
+                let frequency =
+                    canvas_core::parse_notification_frequency(&frequency)?;
+                Ok(NotificationRequest::Update(NotificationUpdateRequest {
+                    channel_id,
+                    notification,
+                    frequency,
+                }))
+            }
+        }
+    }
+}
+
 impl TryFrom<(GroupCommand, &GlobalOptions)> for GroupRequest {
     type Error = CliError;
 
@@ -10450,43 +10648,49 @@ fn create_config_dir(path: &std::path::Path) -> Result<(), canvas_core::CanvasEr
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_import_row, plan_from_prompt, schema_definition, Cli, ImportRow,
-        PlannedCommand, SCHEMA_VERSION,
+        parse_import_row, schema_definition, Cli, ImportRow, SCHEMA_VERSION,
     };
+    use canvas_core::AskPlanner;
+    use canvas_models::{AskCommand, AskCommandKind};
     use clap::CommandFactory;
     use serde_json::Value;
     use std::path::PathBuf;
 
     #[test]
     fn ask_plan_detects_auth_check() {
-        let plan = plan_from_prompt("Please check auth status");
-        assert_eq!(plan.commands.len(), 1);
-        assert_eq!(plan.commands[0].command, "auth check");
+        let prompt =
+            canvas_core::parse_ask_prompt("Please check auth status")
+                .expect("prompt");
+        let planner = canvas_core::RuleBasedAskPlanner::default();
+        let plan = planner.plan(&prompt);
+        assert_eq!(plan.commands().len(), 1);
+        assert_eq!(plan.commands()[0].kind(), AskCommandKind::AuthCheck);
     }
 
     #[test]
     fn ask_plan_detects_course_list() {
-        let plan = plan_from_prompt("List courses for me");
-        assert_eq!(plan.commands.len(), 1);
-        assert_eq!(plan.commands[0].command, "course list");
+        let prompt = canvas_core::parse_ask_prompt("List courses for me")
+            .expect("prompt");
+        let planner = canvas_core::RuleBasedAskPlanner::default();
+        let plan = planner.plan(&prompt);
+        assert_eq!(plan.commands().len(), 1);
+        assert_eq!(plan.commands()[0].kind(), AskCommandKind::CourseList);
     }
 
     #[test]
     fn ask_plan_returns_empty_for_unknown() {
-        let plan = plan_from_prompt("Generate a grade report");
-        assert!(plan.commands.is_empty());
+        let prompt =
+            canvas_core::parse_ask_prompt("Generate a grade report")
+                .expect("prompt");
+        let planner = canvas_core::RuleBasedAskPlanner::default();
+        let plan = planner.plan(&prompt);
+        assert!(plan.commands().is_empty());
     }
 
     #[test]
     fn planned_command_params_are_stable() {
-        let command = PlannedCommand {
-            id: "course-list",
-            command: "course list",
-            params: Vec::new(),
-            risk: "none",
-            destructive: false,
-        };
-        assert!(command.params.is_empty());
+        let command = AskCommand::new(AskCommandKind::CourseList, Vec::new());
+        assert!(command.params().is_empty());
     }
 
     #[test]
