@@ -497,6 +497,36 @@ impl FromStr for SectionId {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct EnrollmentId(u64);
+
+impl EnrollmentId {
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum EnrollmentIdParseError {
+    #[error("enrollment id must be a positive integer")]
+    Invalid,
+}
+
+impl FromStr for EnrollmentId {
+    type Err = EnrollmentIdParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        let value = trimmed
+            .parse::<u64>()
+            .map_err(|_| EnrollmentIdParseError::Invalid)?;
+        if value == 0 {
+            return Err(EnrollmentIdParseError::Invalid);
+        }
+        Ok(Self(value))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ExternalToolId(u64);
 
 impl ExternalToolId {
@@ -1524,6 +1554,33 @@ impl FromStr for GroupId {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SectionName(String);
+
+impl SectionName {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum SectionNameParseError {
+    #[error("section name must not be empty")]
+    Empty,
+}
+
+impl FromStr for SectionName {
+    type Err = SectionNameParseError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(SectionNameParseError::Empty);
+        }
+        Ok(Self(trimmed.to_string()))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct GroupName(String);
 
 impl GroupName {
@@ -2432,14 +2489,15 @@ mod tests {
         ConferenceTitle, CollaborationId, CollaborationTitle, CollaborationType,
         ContentMigrationId, ContentMigrationType, CourseDates, CourseId,
         CourseVisibility, DiscussionId, DueDate, EventDateTime, ExternalToolConfigUrl,
-        ExternalToolId, ExternalToolName, ExternalToolPlacement, FileId, FolderId,
-        FolderName, GradingPeriodId, GroupId, GroupName, GradingSchemeId, MessageBody,
-        MessageSubject, ModuleId, ModuleItemId, ModuleName, ModuleRequirementType,
-        OutcomeDescription, OutcomeGroupId, OutcomeId, OutcomeTitle, PageBody, PageId,
-        PageTitle, PointsPossible, PublishState, QuestionBankId, QuestionBankTitle,
-        QuestionId, QuestionName, QuestionText, QuestionType, RecipientIds, ReportType,
-        RubricAssociationId, RubricAssessment, RubricId, RubricSelection, RubricTitle,
-        Score, SectionId, SubmissionId, UserId, UserRole,
+        EnrollmentId, ExternalToolId, ExternalToolName, ExternalToolPlacement, FileId,
+        FolderId, FolderName, GradingPeriodId, GroupId, GroupName, GradingSchemeId,
+        MessageBody, MessageSubject, ModuleId, ModuleItemId, ModuleName,
+        ModuleRequirementType, OutcomeDescription, OutcomeGroupId, OutcomeId,
+        OutcomeTitle, PageBody, PageId, PageTitle, PointsPossible, PublishState,
+        QuestionBankId, QuestionBankTitle, QuestionId, QuestionName, QuestionText,
+        QuestionType, RecipientIds, ReportType, RubricAssociationId, RubricAssessment,
+        RubricId, RubricSelection, RubricTitle, Score, SectionId, SectionName,
+        SubmissionId, UserId, UserRole,
     };
 
     #[test]
@@ -2535,6 +2593,12 @@ mod tests {
     #[test]
     fn section_id_rejects_zero() {
         let parsed: Result<SectionId, _> = "0".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn enrollment_id_rejects_zero() {
+        let parsed: Result<EnrollmentId, _> = "0".parse();
         assert!(parsed.is_err());
     }
 
@@ -2928,6 +2992,12 @@ mod tests {
     #[test]
     fn group_id_rejects_zero() {
         let parsed: Result<GroupId, _> = "0".parse();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn section_name_rejects_empty() {
+        let parsed: Result<SectionName, _> = " ".parse();
         assert!(parsed.is_err());
     }
 

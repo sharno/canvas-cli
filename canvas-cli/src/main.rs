@@ -1,4 +1,4 @@
-#![recursion_limit = "256"]
+#![recursion_limit = "512"]
 
 use std::collections::BTreeSet;
 use std::fs::File;
@@ -7,10 +7,10 @@ use std::path::PathBuf;
 
 use canvas_models::{
     AssignmentId, CalendarEventContext, CalendarEventId, CollaborationId,
-    ConferenceId, ContentMigrationId, CourseId, FileId, FolderId, GradingPeriodId,
-    GradingPostingPolicy, ModuleId, OutcomeGroupId, OutcomeId, PageId,
-    QuestionBankId, QuestionId, QuizId, QuizSubmissionId, ReportType,
-    RubricAssociationId, RubricId, UserId,
+    ConferenceId, ContentMigrationId, CourseId, EnrollmentId, FileId, FolderId,
+    GradingPeriodId, GradingPostingPolicy, ModuleId, OutcomeGroupId, OutcomeId,
+    PageId, QuestionBankId, QuestionId, QuizId, QuizSubmissionId, ReportType,
+    RubricAssociationId, RubricId, SectionId, UserId,
 };
 use clap::{Args, Parser, Subcommand};
 use csv::ReaderBuilder;
@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 use thiserror::Error;
 use tracing::info;
 
-const SCHEMA_VERSION: &str = "v9";
+const SCHEMA_VERSION: &str = "v10";
 
 #[derive(Debug, Parser)]
 #[command(
@@ -202,6 +202,18 @@ enum Command {
     Group {
         #[command(subcommand)]
         command: GroupCommand,
+    },
+    /// Section operations
+    #[command(after_help = "Examples:\n  canvas section list --course 42\n  canvas section create --course 42 --name \"Section A\"\n  canvas section update --section 10 --name \"Section A1\"\n  canvas section delete --section 10 --confirm")]
+    Section {
+        #[command(subcommand)]
+        command: SectionCommand,
+    },
+    /// Enrollment operations
+    #[command(after_help = "Examples:\n  canvas enrollment list --section 10\n  canvas enrollment add --section 10 --user 99 --role student\n  canvas enrollment remove --section 10 --enrollment 5 --confirm")]
+    Enrollment {
+        #[command(subcommand)]
+        command: EnrollmentCommand,
     },
     /// Analytics and report operations
     #[command(after_help = "Examples:\n  canvas report gradebook-export --course 42 --format csv\n  canvas report submission-status --course 42 --format json\n  canvas report course-activity --course 42\n  canvas report grade-change-log --course 42 --format csv")]
@@ -1419,6 +1431,77 @@ enum GroupCommand {
 }
 
 #[derive(Debug, Subcommand)]
+enum SectionCommand {
+    /// List sections in a course
+    List {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+    },
+    /// Create a section in a course
+    Create {
+        /// Course id override
+        #[arg(long)]
+        course: Option<String>,
+        /// Section name
+        #[arg(long)]
+        name: String,
+    },
+    /// Update a section
+    Update {
+        /// Section id
+        #[arg(long)]
+        section: String,
+        /// Section name
+        #[arg(long)]
+        name: Option<String>,
+    },
+    /// Delete a section
+    Delete {
+        /// Section id
+        #[arg(long)]
+        section: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum EnrollmentCommand {
+    /// List enrollments in a section
+    List {
+        /// Section id
+        #[arg(long)]
+        section: String,
+        /// Role filter (student, ta, teacher)
+        #[arg(long)]
+        role: Option<String>,
+    },
+    /// Add enrollment to a section
+    Add {
+        /// Section id
+        #[arg(long)]
+        section: String,
+        /// User id
+        #[arg(long)]
+        user: String,
+        /// Enrollment role (student, ta, teacher)
+        #[arg(long)]
+        role: String,
+        /// Limit privileges to the section
+        #[arg(long = "limit-to-section")]
+        limit_to_section: bool,
+    },
+    /// Remove enrollment from a section
+    Remove {
+        /// Section id
+        #[arg(long)]
+        section: String,
+        /// Enrollment id
+        #[arg(long)]
+        enrollment: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
 enum ReportCommand {
     /// Export the course gradebook
     GradebookExport {
@@ -2192,6 +2275,61 @@ enum GroupRequest {
 }
 
 #[derive(Debug)]
+struct SectionListRequest {
+    course_id: CourseId,
+}
+
+#[derive(Debug)]
+struct SectionCreateRequest {
+    course_id: CourseId,
+    input: canvas_core::SectionCreateInput,
+}
+
+#[derive(Debug)]
+struct SectionUpdateRequest {
+    section_id: SectionId,
+    input: canvas_core::SectionUpdateInput,
+}
+
+#[derive(Debug)]
+struct SectionDeleteRequest {
+    section_id: SectionId,
+}
+
+#[derive(Debug)]
+enum SectionRequest {
+    List(SectionListRequest),
+    Create(SectionCreateRequest),
+    Update(SectionUpdateRequest),
+    Delete(SectionDeleteRequest),
+}
+
+#[derive(Debug)]
+struct EnrollmentListRequest {
+    section_id: SectionId,
+    role: Option<canvas_models::UserRole>,
+}
+
+#[derive(Debug)]
+struct EnrollmentAddRequest {
+    section_id: SectionId,
+    input: canvas_core::EnrollmentCreateInput,
+}
+
+#[derive(Debug)]
+struct EnrollmentRemoveRequest {
+    section_id: SectionId,
+    enrollment_id: EnrollmentId,
+}
+
+#[derive(Debug)]
+enum EnrollmentRequest {
+    List(EnrollmentListRequest),
+    Add(EnrollmentAddRequest),
+    Remove(EnrollmentRemoveRequest),
+}
+
+#[derive(Debug)]
 struct ReportExportRequest {
     course_id: CourseId,
     report_type: ReportType,
@@ -2406,6 +2544,14 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Command::Group { command } => {
             let request = GroupRequest::try_from((command, &global))?;
             handle_group(request, &global)
+        }
+        Command::Section { command } => {
+            let request = SectionRequest::try_from((command, &global))?;
+            handle_section(request, &global)
+        }
+        Command::Enrollment { command } => {
+            let request = EnrollmentRequest::try_from((command, &global))?;
+            handle_enrollment(request, &global)
         }
         Command::Report { command } => {
             let request = ReportRequest::try_from((command, &global))?;
@@ -4957,6 +5103,227 @@ fn handle_group(request: GroupRequest, global: &GlobalOptions) -> Result<(), Cli
     Ok(())
 }
 
+fn handle_section(
+    request: SectionRequest,
+    global: &GlobalOptions,
+) -> Result<(), CliError> {
+    match request {
+        SectionRequest::List(request) => {
+            let planned = vec![PlannedAction {
+                action: "list sections",
+                risk: "none",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("section list", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let sections =
+                canvas_core::list_sections(&config, request.course_id)?;
+            emit_result(
+                "section list",
+                json!({
+                    "status": "ok",
+                    "course_id": request.course_id.get(),
+                    "sections": sections
+                        .iter()
+                        .map(section_summary_json)
+                        .collect::<Vec<_>>(),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Found {} sections.", sections.len());
+            }
+        }
+        SectionRequest::Create(request) => {
+            let planned = vec![PlannedAction {
+                action: "create section",
+                risk: "creates remote section",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("section create", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let section = canvas_core::create_section(
+                &config,
+                request.course_id,
+                &request.input,
+            )?;
+            emit_result(
+                "section create",
+                json!({
+                    "status": "created",
+                    "course_id": request.course_id.get(),
+                    "section": section_summary_json(&section),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Section created.");
+            }
+        }
+        SectionRequest::Update(request) => {
+            let planned = vec![PlannedAction {
+                action: "update section",
+                risk: "updates remote section",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("section update", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let section = canvas_core::update_section(
+                &config,
+                request.section_id,
+                &request.input,
+            )?;
+            emit_result(
+                "section update",
+                json!({
+                    "status": "updated",
+                    "section": section_summary_json(&section),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Section updated.");
+            }
+        }
+        SectionRequest::Delete(request) => {
+            let planned = vec![PlannedAction {
+                action: "delete section",
+                risk: "deletes remote section",
+                requires_confirmation: true,
+            }];
+            if global.explain {
+                emit_plan("section delete", &planned, global);
+                return Ok(());
+            }
+            require_confirmation(global, "section delete")?;
+            let config = canvas_core::load_merged_config()?;
+            let section =
+                canvas_core::delete_section(&config, request.section_id)?;
+            emit_result(
+                "section delete",
+                json!({
+                    "status": "deleted",
+                    "section": section_summary_json(&section),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Section deleted.");
+            }
+        }
+    }
+    Ok(())
+}
+
+fn handle_enrollment(
+    request: EnrollmentRequest,
+    global: &GlobalOptions,
+) -> Result<(), CliError> {
+    match request {
+        EnrollmentRequest::List(request) => {
+            let planned = vec![PlannedAction {
+                action: "list enrollments",
+                risk: "none",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("enrollment list", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let enrollments = canvas_core::list_enrollments(
+                &config,
+                request.section_id,
+                request.role,
+            )?;
+            emit_result(
+                "enrollment list",
+                json!({
+                    "status": "ok",
+                    "section_id": request.section_id.get(),
+                    "enrollments": enrollments
+                        .iter()
+                        .map(enrollment_summary_json)
+                        .collect::<Vec<_>>(),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Found {} enrollments.", enrollments.len());
+            }
+        }
+        EnrollmentRequest::Add(request) => {
+            let planned = vec![PlannedAction {
+                action: "add enrollment",
+                risk: "creates remote enrollment",
+                requires_confirmation: false,
+            }];
+            if global.explain {
+                emit_plan("enrollment add", &planned, global);
+                return Ok(());
+            }
+            let config = canvas_core::load_merged_config()?;
+            let enrollment = canvas_core::add_enrollment(
+                &config,
+                request.section_id,
+                &request.input,
+            )?;
+            emit_result(
+                "enrollment add",
+                json!({
+                    "status": "created",
+                    "section_id": request.section_id.get(),
+                    "enrollment": enrollment_summary_json(&enrollment),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Enrollment added.");
+            }
+        }
+        EnrollmentRequest::Remove(request) => {
+            let planned = vec![PlannedAction {
+                action: "remove enrollment",
+                risk: "deletes remote enrollment",
+                requires_confirmation: true,
+            }];
+            if global.explain {
+                emit_plan("enrollment remove", &planned, global);
+                return Ok(());
+            }
+            require_confirmation(global, "enrollment remove")?;
+            let config = canvas_core::load_merged_config()?;
+            let enrollment = canvas_core::remove_enrollment(
+                &config,
+                request.section_id,
+                request.enrollment_id,
+            )?;
+            emit_result(
+                "enrollment remove",
+                json!({
+                    "status": "deleted",
+                    "section_id": request.section_id.get(),
+                    "enrollment": enrollment_summary_json(&enrollment),
+                }),
+                global,
+            );
+            if !global.quiet && !global.json {
+                println!("Enrollment removed.");
+            }
+        }
+    }
+    Ok(())
+}
+
 fn handle_report(request: ReportRequest, global: &GlobalOptions) -> Result<(), CliError> {
     match request {
         ReportRequest::GradebookExport(request) => {
@@ -6298,6 +6665,25 @@ fn group_summary_json(group: &canvas_core::GroupSummary) -> Value {
     })
 }
 
+fn section_summary_json(section: &canvas_core::SectionSummary) -> Value {
+    json!({
+        "id": section.id,
+        "course_id": section.course_id,
+        "name": section.name,
+        "enrollment_count": section.enrollment_count,
+    })
+}
+
+fn enrollment_summary_json(enrollment: &canvas_core::EnrollmentSummary) -> Value {
+    json!({
+        "id": enrollment.id,
+        "user_id": enrollment.user_id,
+        "section_id": enrollment.section_id,
+        "role": enrollment.role,
+        "state": enrollment.enrollment_state,
+    })
+}
+
 fn report_summary_json(report: &canvas_core::ReportSummary) -> Value {
     json!({
         "id": report.id,
@@ -7037,6 +7423,76 @@ fn schema_definition() -> Value {
                     "command": { "type": "string" },
                     "data": { "type": "object" },
                 },
+                "required": ["ok", "schema_version", "command", "data"],        
+            },
+            "section_list": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "section_create": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "section_update": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "section_delete": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "enrollment_list": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "enrollment_add": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
+                "required": ["ok", "schema_version", "command", "data"],
+            },
+            "enrollment_remove": {
+                "type": "object",
+                "properties": {
+                    "ok": { "type": "boolean" },
+                    "schema_version": { "type": "string" },
+                    "command": { "type": "string" },
+                    "data": { "type": "object" },
+                },
                 "required": ["ok", "schema_version", "command", "data"],
             },
             "report_export": {
@@ -7238,6 +7694,12 @@ fn error_code(error: &CliError) -> &'static str {
                 "invalid_collaboration_id"
             }
             canvas_core::CanvasError::InvalidSectionId(_) => "invalid_section_id",
+            canvas_core::CanvasError::InvalidSectionName(_) => {
+                "invalid_section_name"
+            }
+            canvas_core::CanvasError::InvalidEnrollmentId(_) => {
+                "invalid_enrollment_id"
+            }
             canvas_core::CanvasError::InvalidExternalToolId(_) => "invalid_external_tool_id",
             canvas_core::CanvasError::InvalidExternalToolName(_) => {
                 "invalid_external_tool_name"
@@ -7351,6 +7813,9 @@ fn error_code(error: &CliError) -> &'static str {
             canvas_core::CanvasError::InvalidQuizUpdate(_) => "invalid_quiz_update",
             canvas_core::CanvasError::InvalidPageUpdate(_) => "invalid_page_update",
             canvas_core::CanvasError::InvalidModuleUpdate(_) => "invalid_module_update",
+            canvas_core::CanvasError::InvalidSectionUpdate(_) => {
+                "invalid_section_update"
+            }
             canvas_core::CanvasError::InvalidModuleRequirementUpdate(_) => {
                 "invalid_module_requirement_update"
             }
@@ -7501,6 +7966,12 @@ fn error_details(error: &CliError) -> Value {
                 json!({ "input": raw })
             }
             canvas_core::CanvasError::InvalidSectionId(raw) => json!({ "input": raw }),
+            canvas_core::CanvasError::InvalidSectionName(raw) => {
+                json!({ "input": raw })
+            }
+            canvas_core::CanvasError::InvalidEnrollmentId(raw) => {
+                json!({ "input": raw })
+            }
             canvas_core::CanvasError::InvalidExternalToolId(raw) => {
                 json!({ "input": raw })
             }
@@ -7628,6 +8099,9 @@ fn error_details(error: &CliError) -> Value {
                 json!({ "detail": detail })
             }
             canvas_core::CanvasError::InvalidModuleUpdate(detail) => {
+                json!({ "detail": detail })
+            }
+            canvas_core::CanvasError::InvalidSectionUpdate(detail) => {
                 json!({ "detail": detail })
             }
             canvas_core::CanvasError::InvalidModuleRequirementUpdate(detail) => {
@@ -9669,6 +10143,109 @@ impl TryFrom<(GroupCommand, &GlobalOptions)> for GroupRequest {
                 .ok_or(CliError::MissingCourseId)?;
                 let name = canvas_core::parse_group_name(&name)?;
                 Ok(GroupRequest::Create(GroupCreateRequest { course_id, name }))
+            }
+        }
+    }
+}
+
+impl TryFrom<(SectionCommand, &GlobalOptions)> for SectionRequest {
+    type Error = CliError;
+
+    fn try_from(
+        input: (SectionCommand, &GlobalOptions),
+    ) -> Result<Self, Self::Error> {
+        let (command, global) = input;
+        match command {
+            SectionCommand::List { course } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                Ok(SectionRequest::List(SectionListRequest { course_id }))
+            }
+            SectionCommand::Create { course, name } => {
+                let course_id = match course {
+                    Some(raw) => Some(canvas_core::parse_course_id(&raw)?),
+                    None => global.course,
+                }
+                .ok_or(CliError::MissingCourseId)?;
+                let name = canvas_core::parse_section_name(&name)?;
+                let input = canvas_core::SectionCreateInput::new(name);
+                Ok(SectionRequest::Create(SectionCreateRequest {
+                    course_id,
+                    input,
+                }))
+            }
+            SectionCommand::Update { section, name } => {
+                let section_id = canvas_core::parse_section_id(&section)?;
+                let name = match name {
+                    Some(raw) => Some(canvas_core::parse_section_name(&raw)?),
+                    None => None,
+                };
+                let input = canvas_core::SectionUpdateInput::new(name)?;
+                Ok(SectionRequest::Update(SectionUpdateRequest {
+                    section_id,
+                    input,
+                }))
+            }
+            SectionCommand::Delete { section } => {
+                let section_id = canvas_core::parse_section_id(&section)?;
+                Ok(SectionRequest::Delete(SectionDeleteRequest { section_id }))
+            }
+        }
+    }
+}
+
+impl TryFrom<(EnrollmentCommand, &GlobalOptions)> for EnrollmentRequest {
+    type Error = CliError;
+
+    fn try_from(
+        input: (EnrollmentCommand, &GlobalOptions),
+    ) -> Result<Self, Self::Error> {
+        let (command, _global) = input;
+        match command {
+            EnrollmentCommand::List { section, role } => {
+                let section_id = canvas_core::parse_section_id(&section)?;
+                let role = match role {
+                    Some(raw) => Some(canvas_core::parse_user_role(&raw)?),
+                    None => None,
+                };
+                Ok(EnrollmentRequest::List(EnrollmentListRequest {
+                    section_id,
+                    role,
+                }))
+            }
+            EnrollmentCommand::Add {
+                section,
+                user,
+                role,
+                limit_to_section,
+            } => {
+                let section_id = canvas_core::parse_section_id(&section)?;
+                let user_id = canvas_core::parse_user_id(&user)?;
+                let role = canvas_core::parse_user_role(&role)?;
+                let input = canvas_core::EnrollmentCreateInput::new(
+                    user_id,
+                    role,
+                    limit_to_section,
+                );
+                Ok(EnrollmentRequest::Add(EnrollmentAddRequest {
+                    section_id,
+                    input,
+                }))
+            }
+            EnrollmentCommand::Remove {
+                section,
+                enrollment,
+            } => {
+                let section_id = canvas_core::parse_section_id(&section)?;
+                let enrollment_id =
+                    canvas_core::parse_enrollment_id(&enrollment)?;
+                Ok(EnrollmentRequest::Remove(EnrollmentRemoveRequest {
+                    section_id,
+                    enrollment_id,
+                }))
             }
         }
     }

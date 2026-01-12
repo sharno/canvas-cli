@@ -16,6 +16,7 @@ mod quizzes;
 mod outcomes;
 mod rubrics;
 mod question_banks;
+mod sections;
 
 use canvas_models::{
     AllDayDate, AssignmentId, AssignmentName, AssignmentOverride, AssignmentOverrideDates,
@@ -24,19 +25,19 @@ use canvas_models::{
     CollaborationId, CollaborationTitle, CollaborationType, ConferenceId,
     ConferenceTitle, ContentMigrationId, ContentMigrationType, CourseDates,
     CourseId, CourseVisibility, DiscussionId, DueDate, EventDateTime,
-    ExternalToolConfigUrl, ExternalToolId, ExternalToolName, ExternalToolPlacement,
-    FileId, FolderId, FolderName, GradingPostingPolicy, GradingSchemeId,
-    GroupAssignmentMode, GroupAssignmentSettings, GroupCategoryId, GroupId,
-    GroupName, MessageBody, MessageSubject, ModuleId, ModuleItemId, ModuleName,
-    ModulePrerequisites, ModuleRequirement, ModuleRequirementType, ModuleRequirements,
-    MutedState, OutcomeDescription,
+    EnrollmentId, ExternalToolConfigUrl, ExternalToolId, ExternalToolName,
+    ExternalToolPlacement, FileId, FolderId, FolderName, GradingPostingPolicy,
+    GradingSchemeId, GroupAssignmentMode, GroupAssignmentSettings,
+    GroupCategoryId, GroupId, GroupName, MessageBody, MessageSubject, ModuleId,
+    ModuleItemId, ModuleName, ModulePrerequisites, ModuleRequirement,
+    ModuleRequirementType, ModuleRequirements, MutedState, OutcomeDescription,
     OutcomeGroupId, OutcomeId, OutcomeTitle, OverrideStudentIds, PageBody, PageId,
     PageTitle, PeerReviewMode, PeerReviewSettings, PointsPossible, PublishState,
     QuestionBankId, QuestionBankTitle, QuestionId, QuestionName, QuestionText,
     QuestionType, QuizAccessCode, QuizAvailability, QuizId, QuizSubmissionId,
     QuizTimeLimit, QuizTitle, RecipientIds, ReportType, RubricAssessment,
     RubricAssociationId, RubricId, RubricSelection, RubricTitle, Score, SectionId,
-    SubmissionId, UserId, UserRole,
+    SectionName, SubmissionId, UserId, UserRole,
 };
 use thiserror::Error;
 
@@ -93,6 +94,11 @@ pub use gradebook::{
 pub use people::{
     create_group, list_groups, list_users, send_message, GroupSummary,
     MessageSendInput, MessageSendResult, UserSummary,
+};
+pub use sections::{
+    add_enrollment, create_section, delete_section, list_enrollments,
+    list_sections, remove_enrollment, update_section, EnrollmentCreateInput,
+    EnrollmentSummary, SectionCreateInput, SectionSummary, SectionUpdateInput,
 };
 pub use quizzes::{
     create_quiz, delete_quiz, ensure_quiz_points, get_quiz, grade_quiz_submission,
@@ -198,6 +204,10 @@ pub enum CanvasError {
     InvalidCollaborationId(String),
     #[error("invalid section id: {0}")]
     InvalidSectionId(String),
+    #[error("invalid section name: {0}")]
+    InvalidSectionName(String),
+    #[error("invalid enrollment id: {0}")]
+    InvalidEnrollmentId(String),
     #[error("invalid external tool id: {0}")]
     InvalidExternalToolId(String),
     #[error("invalid external tool name: {0}")]
@@ -316,6 +326,8 @@ pub enum CanvasError {
     InvalidPageUpdate(String),
     #[error("invalid module update: {0}")]
     InvalidModuleUpdate(String),
+    #[error("invalid section update: {0}")]
+    InvalidSectionUpdate(String),
     #[error("invalid module requirement update: {0}")]
     InvalidModuleRequirementUpdate(String),
     #[error("invalid module reorder: {0}")]
@@ -516,6 +528,16 @@ pub fn parse_collaboration_id(
 pub fn parse_section_id(raw: &str) -> Result<SectionId, CanvasError> {
     raw.parse::<SectionId>()
         .map_err(|_| CanvasError::InvalidSectionId(raw.to_string()))
+}
+
+pub fn parse_section_name(raw: &str) -> Result<SectionName, CanvasError> {
+    raw.parse::<SectionName>()
+        .map_err(|_| CanvasError::InvalidSectionName(raw.to_string()))
+}
+
+pub fn parse_enrollment_id(raw: &str) -> Result<EnrollmentId, CanvasError> {
+    raw.parse::<EnrollmentId>()
+        .map_err(|_| CanvasError::InvalidEnrollmentId(raw.to_string()))
 }
 
 pub fn parse_external_tool_id(raw: &str) -> Result<ExternalToolId, CanvasError> {

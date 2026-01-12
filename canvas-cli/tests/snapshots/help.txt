@@ -27,6 +27,8 @@ Commands:
   user               User-related operations
   message            Messaging operations
   group              Group-related operations
+  section            Section operations
+  enrollment         Enrollment operations
   report             Analytics and report operations
   gradebook          Gradebook policies and grading periods
   ask                Natural-language command planning
